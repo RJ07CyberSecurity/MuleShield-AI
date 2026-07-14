@@ -1,0 +1,39 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #11131b;
+  color: #e1e2ed;
+  scroll-behavior: smooth;
+}
+
+.glass-panel {
+  background: rgba(17, 19, 27, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(180, 197, 255, 0.1);
+}
+
+.marquee {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.marquee-content {
+  display: inline-block;
+  animation: marquee 30s linear infinite;
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #b4c5ff 0%, #2563eb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}

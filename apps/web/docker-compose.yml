@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  # Databases
+  postgres:
+    image: postgres:15-alpine
+    container_name: muleshield-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-muleshield}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secure_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - muleshield-network
+
+  mongodb:
+    image: mongo:6.0
+    container_name: muleshield-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - muleshield-network
+
+  neo4j:
+    image: neo4j:5.9-community
+    container_name: muleshield-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/muleshield_neo4j_pass
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - muleshield-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.1
+    container_name: muleshield-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - muleshield-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: muleshield-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - muleshield-network
+
+  # Gateway & Services
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: muleshield-api-gateway
+    ports:
+      - "${API_GATEWAY_PORT:-8000}:8000"
+    depends_on:
+      - auth-service
+      - detection-engine
+    networks:
+      - muleshield-network
+
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: muleshield-auth-service
+    ports:
+      - "${AUTH_SERVICE_PORT:-8001}:8000"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - muleshield-network
+
+  # Web Frontend
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: muleshield-web-app
+    ports:
+      - "${NEXT_PUBLIC_WEB_PORT:-3000}:3000"
+    depends_on:
+      - api-gateway
+    networks:
+      - muleshield-network
+
+networks:
+  muleshield-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  neo4j_data:
+  elasticsearch_data:
+  redis_data:
