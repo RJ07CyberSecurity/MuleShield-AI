@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # MuleShield AI - Enterprise Anti-Money Laundering & Fraud Detection System
 
 MuleShield AI is a state-of-the-art, production-ready, domain-driven monorepo project designed for real-time transaction monitoring, money mule detection, case management, and compliance reporting.
@@ -33,3 +34,6 @@ muleshield-ai/
 ## Development and Deployment
 
 Refer to individual READMEs inside `apps/`, `services/`, and `databases/` for detailed instructions.
+=======
+# MuleShield-AI
+>>>>>>> b4093435e03b05e86067694e108c940c496e60db
