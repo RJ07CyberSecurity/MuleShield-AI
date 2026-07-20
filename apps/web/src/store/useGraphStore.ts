@@ -148,20 +148,31 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   fetchGraphData: async (alertId) => {
     set({ isLoading: true, error: null });
     try {
-      const response = await apiClient.get<GraphData>(
-        alertId ? `/api/v1/graph?alert_id=${alertId}` : "/api/v1/graph"
-      );
-      if (response && Array.isArray(response.nodes)) {
+      const endpoint = alertId
+        ? `/api/v1/graph?alert_id=${alertId}`
+        : "/api/v1/graph";
+      const response = await apiClient.get<any>(endpoint);
+
+      // Backend returns GraphDataResponse directly (not wrapped in ResponseEnvelope)
+      // But handle both cases
+      const graphData =
+        response?.nodes && Array.isArray(response.nodes)
+          ? response
+          : response?.data?.nodes && Array.isArray(response.data.nodes)
+          ? response.data
+          : null;
+
+      if (graphData && graphData.nodes.length > 0) {
         set({
-          nodes: response.nodes,
-          edges: response.edges || [],
+          nodes: graphData.nodes,
+          edges: graphData.edges || [],
           isLoading: false,
         });
       } else {
         set({ isLoading: false });
+        console.warn("No graph data from backend. Showing local simulation graph.");
       }
     } catch (err) {
-      // Fail silently to simulation data
       set({ isLoading: false });
       console.warn("Backend Graph API not reachable. Showing local simulation graph.");
     }
@@ -170,25 +181,31 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   expandNode: async (nodeId) => {
     set({ isLoading: true });
     try {
-      const response = await apiClient.get<GraphData>(`/api/v1/graph/expand/${nodeId}`);
-      if (response && Array.isArray(response.nodes)) {
-        // Merge nodes and edges without duplicates
+      const response = await apiClient.get<any>(
+        `/api/v1/graph/expand/${nodeId}`
+      );
+      const graphData =
+        response?.nodes && Array.isArray(response.nodes)
+          ? response
+          : response?.data?.nodes && Array.isArray(response.data.nodes)
+          ? response.data
+          : null;
+
+      if (graphData && graphData.nodes.length > 0) {
         set((state) => {
           const nodeIds = new Set(state.nodes.map((n) => n.id));
           const edgeIds = new Set(state.edges.map((e) => e.id));
-
-          const newNodes = [
-            ...state.nodes,
-            ...response.nodes.filter((n) => !nodeIds.has(n.id)),
-          ];
-          const newEdges = [
-            ...state.edges,
-            ...(response.edges || []).filter((e) => !edgeIds.has(e.id)),
-          ];
-
           return {
-            nodes: newNodes,
-            edges: newEdges,
+            nodes: [
+              ...state.nodes,
+              ...graphData.nodes.filter((n: NetworkNode) => !nodeIds.has(n.id)),
+            ],
+            edges: [
+              ...state.edges,
+              ...(graphData.edges || []).filter(
+                (e: NetworkEdge) => !edgeIds.has(e.id)
+              ),
+            ],
             isLoading: false,
           };
         });

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Case } from "../../types/cases";
 import { useCaseStore } from "../../store/useCaseStore";
+import { useUIStore } from "../../store/useUIStore";
 
 interface CaseWorkflowWorkbenchProps {
   activeCase: Case;
@@ -10,12 +11,14 @@ interface CaseWorkflowWorkbenchProps {
 
 export default function CaseWorkflowWorkbench({ activeCase }: CaseWorkflowWorkbenchProps) {
   const { updateCaseStatus, addCaseNote } = useCaseStore();
+  const { addToast } = useUIStore();
   const [noteText, setNoteText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleStatusChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const nextStatus = e.target.value as Case["status"];
     await updateCaseStatus(activeCase.id, nextStatus);
+    addToast(`Successfully updated case status to: ${nextStatus}`, "success");
   };
 
   const handleAddNote = async (e: React.FormEvent) => {
@@ -24,12 +27,13 @@ export default function CaseWorkflowWorkbench({ activeCase }: CaseWorkflowWorkbe
 
     setIsSubmitting(true);
     await addCaseNote(activeCase.id, noteText);
+    addToast("Successfully added case investigator note.", "success");
     setNoteText("");
     setIsSubmitting(false);
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 text-left">
       {/* Workbench Header */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-6 border-b border-outline-variant/30">
         <div>
@@ -63,7 +67,7 @@ export default function CaseWorkflowWorkbench({ activeCase }: CaseWorkflowWorkbe
             <h4 className="font-label-mono text-caption text-on-surface-variant uppercase tracking-wider">
               Investigation Narrative
             </h4>
-            <p className="p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-xl text-body-sm text-on-surface leading-relaxed">
+            <p className="p-4 bg-surface-container-lowest border border-outline-variant/35 rounded-xl text-body-sm text-on-surface leading-relaxed">
               {activeCase.description}
             </p>
           </div>
@@ -151,7 +155,7 @@ export default function CaseWorkflowWorkbench({ activeCase }: CaseWorkflowWorkbe
               .map((note) => (
                 <div
                   key={note.id}
-                  className="p-4 rounded-xl border border-outline-variant/30 bg-surface-container-lowest/60 space-y-2 relative"
+                  className="p-4 rounded-xl border border-outline-variant/30 bg-surface-container-lowest/60 space-y-2 relative text-left"
                 >
                   <div className="flex justify-between items-center text-caption">
                     <span className="font-semibold text-primary">{note.investigator}</span>
@@ -159,9 +163,7 @@ export default function CaseWorkflowWorkbench({ activeCase }: CaseWorkflowWorkbe
                       {new Date(note.timestamp).toLocaleString()}
                     </span>
                   </div>
-                  <p className="text-body-sm text-on-surface leading-relaxed">
-                    {note.text}
-                  </p>
+                  <p className="text-body-sm text-on-surface leading-relaxed">{note.text}</p>
                 </div>
               ))
           )}

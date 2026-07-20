@@ -63,29 +63,112 @@ services:
       - muleshield-network
 
   # Gateway & Services
-  api-gateway:
+  gateway:
     build:
-      context: ./services/api-gateway
-      dockerfile: Dockerfile
-    container_name: muleshield-api-gateway
+      context: ./backend
+      dockerfile: services/gateway/Dockerfile
+    container_name: muleshield-gateway
     ports:
       - "${API_GATEWAY_PORT:-8000}:8000"
     depends_on:
       - auth-service
-      - detection-engine
     networks:
       - muleshield-network
 
   auth-service:
     build:
-      context: ./services/auth-service
-      dockerfile: Dockerfile
+      context: ./backend
+      dockerfile: services/auth-service/Dockerfile
     container_name: muleshield-auth-service
     ports:
       - "${AUTH_SERVICE_PORT:-8001}:8000"
     depends_on:
       - postgres
       - redis
+    networks:
+      - muleshield-network
+
+  customer-service:
+    build:
+      context: ./backend
+      dockerfile: services/customer-service/Dockerfile
+    container_name: muleshield-customer-service
+    ports:
+      - "8002:8000"
+    depends_on:
+      - postgres
+    networks:
+      - muleshield-network
+
+  account-service:
+    build:
+      context: ./backend
+      dockerfile: services/account-service/Dockerfile
+    container_name: muleshield-account-service
+    ports:
+      - "8003:8000"
+    depends_on:
+      - postgres
+    networks:
+      - muleshield-network
+
+  ingestion-service:
+    build:
+      context: ./backend
+      dockerfile: services/ingestion-service/Dockerfile
+    container_name: muleshield-ingestion-service
+    ports:
+      - "8004:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DETECT_ENGINE_URL=http://detection-engine:8000
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - muleshield-network
+
+  detection-engine:
+    build:
+      context: ./backend
+      dockerfile: services/detection-engine/Dockerfile
+    container_name: muleshield-detection-engine
+    ports:
+      - "8005:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - NEO4J_URI=bolt://neo4j:7687
+    depends_on:
+      - postgres
+      - redis
+      - neo4j
+    networks:
+      - muleshield-network
+
+  reporting-service:
+    build:
+      context: ./backend
+      dockerfile: services/reporting-service/Dockerfile
+    container_name: muleshield-reporting-service
+    ports:
+      - "8006:8000"
+    depends_on:
+      - postgres
+    networks:
+      - muleshield-network
+
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: services/detection-engine/Dockerfile
+    container_name: muleshield-celery-worker
+    command: celery -A shared.celery:celery_app worker --loglevel=info
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - NEO4J_URI=bolt://neo4j:7687
+    depends_on:
+      - redis
+      - postgres
     networks:
       - muleshield-network
 
@@ -98,7 +181,7 @@ services:
     ports:
       - "${NEXT_PUBLIC_WEB_PORT:-3000}:3000"
     depends_on:
-      - api-gateway
+      - gateway
     networks:
       - muleshield-network
 

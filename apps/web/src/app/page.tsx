@@ -331,15 +331,28 @@ export default function Home() {
       {/* Dashboard Screen Mock Showcase Section */}
       <section className="py-16 bg-[#07090e]">
         <div className="container mx-auto px-margin-desktop text-center">
-          <div className="rounded-3xl border border-outline-variant/30 overflow-hidden shadow-2xl relative max-w-5xl mx-auto group">
-            <div className="absolute inset-0 bg-gradient-to-tr from-primary/10 to-transparent pointer-events-none"></div>
-            {/* Custom glowing visual border */}
-            <div className="absolute inset-0 border border-primary/20 rounded-3xl pointer-events-none group-hover:border-primary/50 transition-all duration-300"></div>
-            <img
-              className="w-full object-cover aspect-[16/10]"
-              alt="MuleShield interactive network explorer workspace interface mockup"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBG5YBxdAPcpRz4rSGHtfEYDCn4JAXZPIivXJtXxCLieGm66yA96WrF7XyH8PnwGaD6WJgjNwEPpHKePmClG-X_khOHl-asqPh4aMjeJZhNd8ONFcFEW93pQuRDY8DPKbMhwIxgbggOLDvp4H-laBsvFaTg9D7QN-JpIIkNS7XXZRgEg-NKW0p51Z9UiUGkd2ExDH3kgnssXoo_NolJtMr39HGuxdq7taXmfnWyeYSCrwvq0ys0FTNc"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto select-none">
+            <div className="p-6 rounded-3xl border border-outline-variant/20 bg-[#0a0d17]/80 backdrop-blur-md text-left space-y-4">
+              <span className="material-symbols-outlined text-primary text-3xl">insights</span>
+              <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider">Detection Engine</h4>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                Aggregated GCN models trace and rank threat behaviors on downstream transfers in sub-second intervals.
+              </p>
+            </div>
+            <div className="p-6 rounded-3xl border border-outline-variant/20 bg-[#0a0d17]/80 backdrop-blur-md text-left space-y-4">
+              <span className="material-symbols-outlined text-risk-high text-3xl">hub</span>
+              <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider">Topology Map</h4>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                Interactive connection diagrams identify multi-hop accounts, proxies, and shared biometric keys.
+              </p>
+            </div>
+            <div className="p-6 rounded-3xl border border-outline-variant/20 bg-[#0a0d17]/80 backdrop-blur-md text-left space-y-4">
+              <span className="material-symbols-outlined text-risk-low text-3xl">verified_user</span>
+              <h4 className="text-sm font-bold text-on-surface uppercase tracking-wider">Audit Ledger</h4>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                Cryptographically signed trails compile FinCEN compliant regulatory reports automatically.
+              </p>
+            </div>
           </div>
         </div>
       </section>

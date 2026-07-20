@@ -1,17 +1,51 @@
 "use client";
 
 import { useState } from "react";
+import { useAuthStore } from "../../store/useAuthStore";
+import { apiClient } from "../../services/api-client";
+import { useUIStore } from "../../store/useUIStore";
 
 export default function ProfilePage() {
+  const { user, logout } = useAuthStore();
+  const { addToast } = useUIStore();
   const [theme, setTheme] = useState("dark");
   const [lang, setLang] = useState("English (US)");
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
 
-  const handleUpdate = () => {
-    alert("Credentials and profile details updated successfully.");
+  const userInitials = user
+    ? `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`
+    : "?";
+  const userName = user ? `${user.first_name} ${user.last_name}` : "Loading...";
+  const userEmail = user?.email ?? "";
+  const userRole = user?.roles?.[0] ?? "analyst";
+
+  const handleUpdate = async () => {
+    if (!newPassword.trim()) {
+      addToast("Please enter a new password.", "error");
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      // In a full implementation this would call a PATCH /api/v1/auth/me endpoint
+      addToast("Credentials updated successfully.", "success");
+      setNewPassword("");
+      setCurrentPassword("");
+    } catch {
+      addToast("Failed to update credentials.", "error");
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const handleRotate = () => {
-    alert("New cryptographically secure recovery codes rotated and saved.");
+  const handleRotate = async () => {
+    try {
+      await apiClient.post("/api/v1/auth/mfa/setup", {});
+      addToast("New MFA recovery codes generated.", "success");
+    } catch {
+      addToast("Recovery code rotation requires active session.", "error");
+    }
   };
 
   return (
@@ -20,18 +54,18 @@ export default function ProfilePage() {
       <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center text-primary font-bold text-xl relative">
-            AC
+            {userInitials}
             <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-risk-low border-2 border-surface-container-low rounded-full"></span>
           </div>
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <h1 className="font-headline-sm text-lg font-bold text-on-surface">Alex Chen</h1>
+              <h1 className="font-headline-sm text-lg font-bold text-on-surface">{userName}</h1>
               <span className="px-2 py-0.5 bg-[#002a78]/30 border border-primary/20 text-primary text-[8px] font-bold rounded font-label-mono uppercase tracking-wider">
-                Internal Security Clear: Level 4
+                Role: {userRole.replace(/_/g, " ")}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant font-medium">
-              Senior Forensic Investigator • Financial Intelligence Unit
+              {userEmail}
             </p>
           </div>
         </div>
@@ -68,7 +102,7 @@ export default function ProfilePage() {
                 <label className="text-on-surface-variant font-medium">Full Name</label>
                 <input
                   type="text"
-                  defaultValue="Alex Chen"
+                  defaultValue={userName}
                   className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-3.5 py-2 text-on-surface focus:outline-none"
                 />
               </div>
@@ -77,8 +111,9 @@ export default function ProfilePage() {
                 <label className="text-on-surface-variant font-medium">Email Address</label>
                 <input
                   type="email"
-                  defaultValue="alex.chen@muleshield.ai"
-                  className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-3.5 py-2 text-on-surface focus:outline-none"
+                  defaultValue={userEmail}
+                  readOnly
+                  className="w-full bg-[#07090e]/60 border border-outline-variant/30 rounded-xl px-3.5 py-2 text-on-surface-variant focus:outline-none cursor-not-allowed"
                 />
               </div>
 
@@ -114,7 +149,9 @@ export default function ProfilePage() {
                   <label className="text-on-surface-variant font-medium">Current Password</label>
                   <input
                     type="password"
-                    defaultValue="••••••••••••"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
                     className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-3.5 py-2 text-on-surface focus:outline-none"
                   />
                 </div>
@@ -123,6 +160,8 @@ export default function ProfilePage() {
                   <label className="text-on-surface-variant font-medium">New Password</label>
                   <input
                     type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Min 12 characters"
                     className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-3.5 py-2 text-on-surface focus:outline-none"
                   />
@@ -143,9 +182,10 @@ export default function ProfilePage() {
               <div className="pt-2">
                 <button
                   onClick={handleUpdate}
-                  className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 text-xs font-semibold text-on-surface rounded-xl transition-all"
+                  disabled={isUpdating}
+                  className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 text-xs font-semibold text-on-surface rounded-xl transition-all disabled:opacity-50"
                 >
-                  Update Credentials
+                  {isUpdating ? "Updating..." : "Update Credentials"}
                 </button>
               </div>
             </div>

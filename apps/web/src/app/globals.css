@@ -9,12 +9,47 @@ body {
   background-color: #11131b;
   color: #e1e2ed;
   scroll-behavior: smooth;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Premium Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(17, 19, 27, 0.3);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(141, 144, 160, 0.15);
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(180, 197, 255, 0.3);
+}
+
+/* Premium Focus States */
+*:focus-visible {
+  outline: 2px solid rgba(180, 197, 255, 0.4);
+  outline-offset: 2px;
 }
 
 .glass-panel {
-  background: rgba(17, 19, 27, 0.8);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(180, 197, 255, 0.1);
+  background: rgba(17, 19, 27, 0.7);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(180, 197, 255, 0.08);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+}
+
+.glass-panel-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-panel-hover:hover {
+  border-color: rgba(180, 197, 255, 0.15);
+  background: rgba(25, 27, 35, 0.85);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 36px rgba(0, 0, 0, 0.5);
 }
 
 .marquee {
@@ -24,7 +59,7 @@ body {
 
 .marquee-content {
   display: inline-block;
-  animation: marquee 30s linear infinite;
+  animation: marquee 35s linear infinite;
 }
 
 @keyframes marquee {
@@ -33,7 +68,26 @@ body {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #b4c5ff 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #b4c5ff 0%, #3b82f6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* Pulse animation variant */
+.pulse-glow {
+  box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4);
+  animation: pulse-glow 2s infinite;
+}
+
+@keyframes pulse-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(220, 38, 38, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+}
+

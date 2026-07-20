@@ -1,22 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useUIStore } from "../../store/useUIStore";
+
+type SortField = "id" | "priority" | "status" | "assignedTo" | "sla" | "riskScore" | "created";
 
 export default function CasesPage() {
   const router = useRouter();
+  const { addToast } = useUIStore();
+
   const [filterStatus, setFilterStatus] = useState("All Active");
   const [filterPriority, setFilterPriority] = useState("Critical, High");
+  const [filterAssignee, setFilterAssignee] = useState("All");
+
+  // Sorting state
+  const [sortField, setSortField] = useState<SortField>("riskScore");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  // Row selection state
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
 
   const stats = [
-    { label: "Total Open Cases", value: "1,248", change: "+12% vs last week", descColor: "text-risk-low", icon: "folder" },
-    { label: "Critical Alerts", value: "42", change: "High risk density in Northeast node", descColor: "text-risk-high", icon: "error" },
+    { label: "Total Open Cases", value: "1,248", change: "↑ 12% vs last week", descColor: "text-risk-low", icon: "folder" },
+    { label: "Critical Alerts", value: "42", change: "Northeast Node Surge", descColor: "text-risk-high", icon: "error" },
     { label: "Breached SLA", value: "14", change: "Avg delay: 4.2 hours", descColor: "text-risk-medium", icon: "hourglass_empty" },
     { label: "MTTR", value: "2.4h", change: "-8% from target", descColor: "text-risk-low", icon: "speed" },
   ];
 
-  const cases = [
+  const initialCases = [
     {
       id: "#MS-84291",
       subject: "Elena S. Volkov",
@@ -27,7 +40,7 @@ export default function CasesPage() {
       sla: "-00:42:12",
       riskScore: "98/100",
       created: "2023-10-24 08:12",
-      targetId: "ACC-092281", // Routes to Vasily's dynamic forensics page
+      targetId: "ACC-092281",
     },
     {
       id: "#MS-84305",
@@ -79,13 +92,83 @@ export default function CasesPage() {
     },
   ];
 
+  // Filtering cases
+  const filteredCases = useMemo(() => {
+    return initialCases.filter((c) => {
+      // Status filter
+      if (filterStatus === "Closed" && c.status !== "Closed") return false;
+      
+      // Priority filter
+      if (filterPriority === "Critical, High") {
+        if (c.priority !== "CRITICAL" && c.priority !== "HIGH") return false;
+      }
+      
+      // Assignee filter
+      if (filterAssignee === "Me" && c.assignedTo !== "John Doe") return false;
+
+      return true;
+    });
+  }, [filterStatus, filterPriority, filterAssignee]);
+
+  // Sorting cases
+  const sortedCases = useMemo(() => {
+    const sorted = [...filteredCases];
+    sorted.sort((a, b) => {
+      let aVal: any = a[sortField];
+      let bVal: any = b[sortField];
+
+      if (sortField === "riskScore") {
+        aVal = Number(a.riskScore.split("/")[0]);
+        bVal = Number(b.riskScore.split("/")[0]);
+      }
+
+      if (aVal < bVal) return sortAsc ? -1 : 1;
+      if (aVal > bVal) return sortAsc ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [filteredCases, sortField, sortAsc]);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(false);
+    }
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedRows(new Set(sortedCases.map((c) => c.id)));
+    } else {
+      setSelectedRows(new Set());
+    }
+  };
+
+  const handleSelectRow = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger redirect click
+    const next = new Set(selectedRows);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedRows(next);
+  };
+
+  const handleBulkAction = (action: string) => {
+    addToast(`Successfully triggered ${action} for ${selectedRows.size} cases`, "success");
+    setSelectedRows(new Set());
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       {/* Title Header */}
-      <div>
-        <h2 className="text-xl font-bold text-on-surface">Case Queue</h2>
+      <div className="text-left">
+        <h2 className="text-xl font-bold text-on-surface">Case Registry Queue</h2>
         <p className="text-body-sm text-on-surface-variant mt-1">
-          Managing 1,248 active suspicious activity reports across the regional network.
+          Managing active suspicious activity reports across the regional network.
         </p>
       </div>
 
@@ -94,9 +177,9 @@ export default function CasesPage() {
         {stats.map((stat, i) => (
           <div
             key={i}
-            className="p-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex justify-between items-start"
+            className="p-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low/60 flex justify-between items-start"
           >
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 text-left">
               <div className="text-[10px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
                 {stat.label}
               </div>
@@ -115,51 +198,65 @@ export default function CasesPage() {
       </section>
 
       {/* Filter Options Bar */}
-      <section className="flex flex-wrap items-center gap-4 bg-[#0a0d17] p-4 rounded-xl border border-outline-variant/30 text-body-sm">
+      <section className="flex flex-wrap items-center gap-4 bg-surface-container-low p-4 rounded-xl border border-outline-variant/30 text-body-sm">
         <div className="flex items-center gap-2">
-          <span className="text-on-surface-variant text-xs">Status:</span>
+          <span className="text-on-surface-variant text-xs font-semibold">Status:</span>
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-2.5 py-1 text-xs text-on-surface-variant"
+            className="bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-2.5 py-1 text-xs text-on-surface focus:outline-none"
           >
-            <option>All Active</option>
+            <option value="All Active">All Active</option>
+            <option value="Closed">Closed</option>
           </select>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-on-surface-variant text-xs">Priority:</span>
+          <span className="text-on-surface-variant text-xs font-semibold">Priority:</span>
           <select
             value={filterPriority}
             onChange={(e) => setFilterPriority(e.target.value)}
-            className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-2.5 py-1 text-xs text-on-surface-variant"
+            className="bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-2.5 py-1 text-xs text-on-surface focus:outline-none"
           >
-            <option>Critical, High</option>
+            <option value="Critical, High">Critical, High</option>
+            <option value="All">All Priorities</option>
           </select>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-on-surface-variant text-xs">Assignee:</span>
+          <span className="text-on-surface-variant text-xs font-semibold">Assignee:</span>
           <select
-            className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-2.5 py-1 text-xs text-on-surface-variant"
+            value={filterAssignee}
+            onChange={(e) => setFilterAssignee(e.target.value)}
+            className="bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-2.5 py-1 text-xs text-on-surface focus:outline-none"
           >
-            <option>Me</option>
+            <option value="All">All Assignees</option>
+            <option value="Me">Assigned to Me</option>
           </select>
         </div>
 
-        <button className="px-3.5 py-1.5 border border-outline-variant/30 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface-variant flex items-center gap-1.5">
+        <button
+          onClick={() => addToast("Advanced filtering panel toggled", "info")}
+          className="px-3.5 py-1.5 border border-outline-variant/30 bg-surface-container-lowest hover:border-primary/45 rounded-xl text-xs font-semibold text-on-surface flex items-center gap-1.5 transition-colors"
+        >
           <span className="material-symbols-outlined text-xs">filter_list</span>
           Advanced Filters
         </button>
 
         <div className="flex gap-2 ml-auto">
-          <button className="px-3.5 py-1.5 border border-outline-variant/30 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface-variant flex items-center gap-1.5">
+          <button
+            onClick={() => handleBulkAction("Bulk Assign")}
+            disabled={selectedRows.size === 0}
+            className="px-3.5 py-1.5 border border-outline-variant/30 bg-surface-container-lowest rounded-xl text-xs font-semibold text-on-surface disabled:opacity-50 flex items-center gap-1.5"
+          >
             <span className="material-symbols-outlined text-xs">group_add</span>
             Bulk Assign
           </button>
           <button
-            onClick={() => alert("CSV Export completed successfully.")}
-            className="px-3.5 py-1.5 border border-outline-variant/30 bg-surface-container-low rounded-xl text-xs font-semibold text-on-surface flex items-center gap-1.5"
+            onClick={() => {
+              addToast("CSV Export completed successfully.", "success");
+            }}
+            className="px-3.5 py-1.5 border border-outline-variant/30 bg-surface-container-lowest rounded-xl text-xs font-semibold text-on-surface hover:border-primary/45 flex items-center gap-1.5 transition-all"
           >
             <span className="material-symbols-outlined text-xs">file_download</span>
             Export CSV
@@ -168,41 +265,138 @@ export default function CasesPage() {
       </section>
 
       {/* Case queue Table list */}
-      <div className="overflow-x-auto rounded-xl border border-outline-variant/30 bg-surface-container-low">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-outline-variant/30 text-on-surface-variant font-label-mono text-[9px] uppercase tracking-widest bg-surface-container-high/20">
-              <th className="px-4 py-4 w-10">
-                <input type="checkbox" className="rounded" />
+      <div className="overflow-x-auto rounded-xl border border-outline-variant/20 bg-surface-container-low max-h-[600px] overflow-y-auto">
+        <table className="w-full text-left border-collapse min-w-[900px] table-fixed">
+          <thead className="sticky top-0 bg-surface-container-low/95 backdrop-blur-md z-10 border-b border-outline-variant/30">
+            <tr className="text-on-surface-variant font-label-mono text-[9px] uppercase tracking-widest">
+              <th className="px-4 py-4 w-12">
+                <input
+                  type="checkbox"
+                  onChange={handleSelectAll}
+                  checked={sortedCases.length > 0 && selectedRows.size === sortedCases.length}
+                  className="rounded border-outline-variant/30 text-primary focus:ring-primary/20 bg-surface-container-lowest"
+                />
               </th>
-              <th className="px-4 py-4">Case ID</th>
-              <th className="px-4 py-4">Subject</th>
-              <th className="px-4 py-4 text-center">Priority</th>
-              <th className="px-4 py-4">Status</th>
-              <th className="px-4 py-4">Assigned To</th>
-              <th className="px-4 py-4">SLA</th>
-              <th className="px-4 py-4">Risk</th>
-              <th className="px-4 py-4 text-right">Created</th>
+              <th
+                onClick={() => handleSort("id")}
+                className="px-4 py-4 cursor-pointer hover:text-on-surface w-24"
+              >
+                <div className="flex items-center gap-1">
+                  Case ID
+                  {sortField === "id" && (
+                    <span className="material-symbols-outlined text-xs">
+                      {sortAsc ? "arrow_upward" : "arrow_downward"}
+                    </span>
+                  )}
+                </div>
+              </th>
+              <th className="px-4 py-4">Subject Info</th>
+              <th
+                onClick={() => handleSort("priority")}
+                className="px-4 py-4 cursor-pointer hover:text-on-surface text-center w-28"
+              >
+                <div className="flex items-center justify-center gap-1">
+                  Priority
+                  {sortField === "priority" && (
+                    <span className="material-symbols-outlined text-xs">
+                      {sortAsc ? "arrow_upward" : "arrow_downward"}
+                    </span>
+                  )}
+                </div>
+              </th>
+              <th
+                onClick={() => handleSort("status")}
+                className="px-4 py-4 cursor-pointer hover:text-on-surface w-32"
+              >
+                <div className="flex items-center gap-1">
+                  Status
+                  {sortField === "status" && (
+                    <span className="material-symbols-outlined text-xs">
+                      {sortAsc ? "arrow_upward" : "arrow_downward"}
+                    </span>
+                  )}
+                </div>
+              </th>
+              <th
+                onClick={() => handleSort("assignedTo")}
+                className="px-4 py-4 cursor-pointer hover:text-on-surface w-40"
+              >
+                <div className="flex items-center gap-1">
+                  Assigned To
+                  {sortField === "assignedTo" && (
+                    <span className="material-symbols-outlined text-xs">
+                      {sortAsc ? "arrow_upward" : "arrow_downward"}
+                    </span>
+                  )}
+                </div>
+              </th>
+              <th
+                onClick={() => handleSort("sla")}
+                className="px-4 py-4 cursor-pointer hover:text-on-surface w-28"
+              >
+                <div className="flex items-center gap-1">
+                  SLA
+                  {sortField === "sla" && (
+                    <span className="material-symbols-outlined text-xs">
+                      {sortAsc ? "arrow_upward" : "arrow_downward"}
+                    </span>
+                  )}
+                </div>
+              </th>
+              <th
+                onClick={() => handleSort("riskScore")}
+                className="px-4 py-4 cursor-pointer hover:text-on-surface w-28"
+              >
+                <div className="flex items-center gap-1">
+                  Risk
+                  {sortField === "riskScore" && (
+                    <span className="material-symbols-outlined text-xs">
+                      {sortAsc ? "arrow_upward" : "arrow_downward"}
+                    </span>
+                  )}
+                </div>
+              </th>
+              <th
+                onClick={() => handleSort("created")}
+                className="px-4 py-4 cursor-pointer hover:text-on-surface text-right w-36"
+              >
+                <div className="flex items-center justify-end gap-1">
+                  Created
+                  {sortField === "created" && (
+                    <span className="material-symbols-outlined text-xs">
+                      {sortAsc ? "arrow_upward" : "arrow_downward"}
+                    </span>
+                  )}
+                </div>
+              </th>
             </tr>
           </thead>
-          <tbody>
-            {cases.map((c, i) => {
+          <tbody className="divide-y divide-outline-variant/10">
+            {sortedCases.map((c, i) => {
               const isCritical = c.priority === "CRITICAL";
               const isHigh = c.priority === "HIGH";
               const isMedium = c.priority === "MEDIUM";
+              const isChecked = selectedRows.has(c.id);
 
               return (
                 <tr
                   key={i}
                   onClick={() => router.push(`/cases/${c.targetId}`)}
-                  className="cursor-pointer border-b border-outline-variant/10 text-xs hover:bg-surface-container-high/40 transition-colors"
+                  className={`cursor-pointer text-xs hover:bg-surface-container-high/40 transition-colors ${
+                    isChecked ? "bg-primary-container/5" : ""
+                  }`}
                 >
-                  <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" className="rounded" />
+                  <td className="px-4 py-4" onClick={(e) => handleSelectRow(c.id, e)}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {}}
+                      className="rounded border-outline-variant/30 text-primary focus:ring-primary/20 bg-surface-container-lowest"
+                    />
                   </td>
-                  <td className="px-4 py-4 font-bold text-primary font-label-mono">{c.id}</td>
-                  <td className="px-4 py-4">
-                    <div className="font-semibold text-on-surface">{c.subject}</div>
+                  <td className="px-4 py-4 font-bold text-primary font-label-mono truncate">{c.id}</td>
+                  <td className="px-4 py-4 truncate">
+                    <div className="font-semibold text-on-surface truncate">{c.subject}</div>
                     <div className="text-[10px] text-on-surface-variant font-label-mono mt-0.5">
                       ACCT: {c.acct}
                     </div>
@@ -210,7 +404,7 @@ export default function CasesPage() {
                   <td className="px-4 py-4">
                     <div className="flex justify-center">
                       <span
-                        className={`px-2 py-0.5 rounded border text-[9px] font-bold ${
+                        className={`px-2.5 py-0.5 rounded border text-[9px] font-bold ${
                           isCritical
                             ? "text-risk-critical border-risk-critical/20 bg-risk-critical/10"
                             : isHigh
@@ -224,7 +418,7 @@ export default function CasesPage() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-4 font-semibold text-on-surface">
+                  <td className="px-4 py-4 font-semibold text-on-surface truncate">
                     <span className="inline-flex items-center gap-1.5">
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
@@ -238,7 +432,7 @@ export default function CasesPage() {
                       {c.status}
                     </span>
                   </td>
-                  <td className="px-4 py-4 text-on-surface-variant font-medium">
+                  <td className="px-4 py-4 text-on-surface-variant font-medium truncate">
                     {c.assignedTo === "Unassigned" ? (
                       <span className="italic text-on-surface-variant/50">Unassigned</span>
                     ) : (
@@ -251,7 +445,7 @@ export default function CasesPage() {
                     )}
                   </td>
                   <td
-                    className={`px-4 py-4 font-label-mono font-semibold ${
+                    className={`px-4 py-4 font-label-mono font-semibold truncate ${
                       c.sla.startsWith("-") ? "text-risk-critical" : "text-on-surface-variant"
                     }`}
                   >
@@ -273,7 +467,7 @@ export default function CasesPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-4 text-right font-label-mono text-on-surface-variant">
+                  <td className="px-4 py-4 text-right font-label-mono text-on-surface-variant truncate">
                     {c.created}
                   </td>
                 </tr>
@@ -281,19 +475,34 @@ export default function CasesPage() {
             })}
           </tbody>
         </table>
+      </div>
 
-        {/* Table footer */}
-        <div className="p-4 bg-surface-container-high/20 flex justify-between items-center text-caption text-on-surface-variant font-label-mono border-t border-outline-variant/20">
-          <span>Showing 1 - 5 of 1,248 cases</span>
+      {/* Floating Actions bar */}
+      {selectedRows.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-surface-container-high border border-outline-variant/40 rounded-xl px-6 py-3.5 shadow-2xl flex items-center gap-6 z-40 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-primary text-on-primary text-xs font-bold flex items-center justify-center">
+              {selectedRows.size}
+            </span>
+            <span className="text-body-sm font-semibold text-on-surface">Selected Cases</span>
+          </div>
+          <div className="w-px h-5 bg-outline-variant/35" />
           <div className="flex gap-2">
-            <button className="px-2 py-1 hover:text-on-surface">Previous</button>
-            <button className="px-2.5 py-1 bg-primary text-on-primary font-bold rounded">1</button>
-            <button className="px-2.5 py-1 hover:text-on-surface">2</button>
-            <button className="px-2.5 py-1 hover:text-on-surface">3</button>
-            <button className="px-2 py-1 hover:text-on-surface">Next</button>
+            <button
+              onClick={() => handleBulkAction("Escalate")}
+              className="px-3.5 py-1.5 bg-primary text-on-primary font-bold text-xs rounded-lg hover:opacity-90 transition-opacity"
+            >
+              Bulk Escalate
+            </button>
+            <button
+              onClick={() => handleBulkAction("Close")}
+              className="px-3.5 py-1.5 border border-outline-variant/30 hover:border-risk-high/30 bg-[#07090e] rounded-lg text-xs font-bold text-on-surface-variant hover:text-risk-high transition-colors"
+            >
+              Bulk Close
+            </button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

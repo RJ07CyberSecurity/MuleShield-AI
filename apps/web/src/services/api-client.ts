@@ -13,7 +13,8 @@ async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   const headers = new Headers(options.headers);
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
@@ -30,7 +31,50 @@ async function request<T>(
 
   const url = endpoint.startsWith("http") ? endpoint : `${BASE_URL}${endpoint}`;
 
-  const response = await fetch(url, config);
+  let response = await fetch(url, config);
+
+  // Auto-refresh on 401 before giving up
+  if (response.status === 401 && typeof window !== "undefined") {
+    const refreshToken = localStorage.getItem("refresh_token");
+    if (refreshToken) {
+      try {
+        const refreshRes = await fetch(`${BASE_URL}/api/v1/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          if (refreshData?.data?.access_token) {
+            localStorage.setItem("token", refreshData.data.access_token);
+            localStorage.setItem(
+              "refresh_token",
+              refreshData.data.refresh_token || refreshToken
+            );
+            // Retry original request with new token
+            headers.set("Authorization", `Bearer ${refreshData.data.access_token}`);
+            response = await fetch(url, { ...config, headers });
+          }
+        } else {
+          // Refresh failed — force logout
+          localStorage.removeItem("token");
+          localStorage.removeItem("refresh_token");
+          window.location.href = "/login";
+          throw new APIError("Session expired. Please login again.", 401);
+        }
+      } catch {
+        localStorage.removeItem("token");
+        localStorage.removeItem("refresh_token");
+        window.location.href = "/login";
+        throw new APIError("Session expired. Please login again.", 401);
+      }
+    } else {
+      // No refresh token — force logout
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+      throw new APIError("Unauthorized. Please login.", 401);
+    }
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -58,7 +102,7 @@ export const apiClient = {
     request<T>(endpoint, {
       ...options,
       method: "POST",
-      body: JSON.stringify(body),
+      body: body instanceof FormData ? body : JSON.stringify(body),
     }),
   put: <T>(endpoint: string, body: any, options?: RequestInit) =>
     request<T>(endpoint, {

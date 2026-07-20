@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
+import { useUIStore } from "../../store/useUIStore";
 
 // ROC/PR curves mock coordinates
 const rocData = [
@@ -31,6 +32,7 @@ const driftData = [
 ];
 
 export default function ModelsPage() {
+  const { addToast } = useUIStore();
   const [activeTab, setActiveTab] = useState<"inventory" | "differential">("inventory");
   const [canaryTraffic, setCanaryTraffic] = useState(5);
   const [deployMode, setDeployMode] = useState("shadow");
@@ -43,7 +45,7 @@ export default function ModelsPage() {
   ];
 
   const handleRollout = () => {
-    alert(`Deploying challenger model: Canary rollout set at ${canaryTraffic}% traffic.`);
+    addToast(`Deploying challenger model: Canary rollout set at ${canaryTraffic}% traffic.`, "success");
   };
 
   return (
@@ -72,13 +74,13 @@ export default function ModelsPage() {
         {/* Global model Actions */}
         <div className="flex gap-3">
           <button
-            onClick={() => alert("Model constraints updated.")}
+            onClick={() => addToast("Model constraints configuration successfully archived.", "success")}
             className="px-4 py-2 border border-outline-variant/30 hover:border-primary/50 text-xs font-bold text-on-surface rounded-xl hover:bg-white/5 transition-all"
           >
             Global Constraints
           </button>
           <button
-            onClick={() => alert("Challenger version compilation initialized.")}
+            onClick={() => addToast("Challenger version compilation initialized.", "success")}
             className="px-4 py-2 bg-primary text-on-primary font-bold text-xs rounded-xl hover:opacity-90 transition-all flex items-center gap-1.5"
           >
             <span className="material-symbols-outlined text-xs">cloud_upload</span>
@@ -89,7 +91,7 @@ export default function ModelsPage() {
 
       {/* RENDER INVENTORY TAB */}
       {activeTab === "inventory" && (
-        <div className="space-y-8">
+        <div className="space-y-8 text-left">
           <div>
             <h2 className="text-xl font-bold text-on-surface">MuleShield AI Assets</h2>
             <p className="text-body-sm text-on-surface-variant mt-1">
@@ -110,7 +112,19 @@ export default function ModelsPage() {
                   <LineChart data={rocData} margin={{ left: -30, right: 0, top: 10, bottom: 0 }}>
                     <XAxis dataKey="fpr" stroke="#8d90a0" style={{ fontSize: "8px" }} />
                     <YAxis dataKey="tpr" stroke="#8d90a0" style={{ fontSize: "8px" }} />
-                    <Tooltip />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="p-2 bg-surface-container-high border border-outline-variant/30 rounded text-[10px] font-label-mono">
+                              <p>FPR: {payload[0].payload.fpr}</p>
+                              <p className="font-bold text-primary">TPR: {payload[0].value}</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
                     <Line type="monotone" dataKey="tpr" stroke="#3b82f6" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -128,7 +142,19 @@ export default function ModelsPage() {
                   <LineChart data={rocData} margin={{ left: -30, right: 0, top: 10, bottom: 0 }}>
                     <XAxis dataKey="fpr" stroke="#8d90a0" style={{ fontSize: "8px" }} />
                     <YAxis dataKey="tpr" stroke="#8d90a0" style={{ fontSize: "8px" }} />
-                    <Tooltip />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="p-2 bg-surface-container-high border border-outline-variant/30 rounded text-[10px] font-label-mono">
+                              <p>Recall: {payload[0].payload.fpr}</p>
+                              <p className="font-bold text-risk-low">Precision: {payload[0].value}</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
                     <Line type="monotone" dataKey="tpr" stroke="#10b981" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -160,316 +186,184 @@ export default function ModelsPage() {
               Available Classifiers
             </h3>
 
-            <div className="space-y-4">
-              {/* Card 1 */}
-              <div className="p-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h4 className="font-bold text-base text-on-surface">XGBoost Mule Classifier</h4>
-                    <span className="px-2 py-0.5 bg-risk-low/10 border border-risk-low/20 text-risk-low text-[9px] font-bold rounded">
-                      COMPLETE
-                    </span>
-                  </div>
-                  <p className="text-xs text-on-surface-variant mt-1 font-label-mono">v2.4.1-stable</p>
-                </div>
-
-                <div className="flex gap-8 text-center text-xs">
-                  <div>
-                    <div className="text-on-surface-variant font-label-mono uppercase text-[9px]">Precision</div>
-                    <div className="font-bold text-on-surface text-base mt-0.5">0.962</div>
-                  </div>
-                  <div>
-                    <div className="text-on-surface-variant font-label-mono uppercase text-[9px]">Recall</div>
-                    <div className="font-bold text-on-surface text-base mt-0.5">0.894</div>
-                  </div>
-                  <div>
-                    <div className="text-on-surface-variant font-label-mono uppercase text-[9px]">F1 Score</div>
-                    <div className="font-bold text-on-surface text-base mt-0.5">0.927</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 2 */}
-              <div className="p-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h4 className="font-bold text-base text-on-surface">GNN Network Anomaly</h4>
-                    <span className="px-2 py-0.5 bg-primary/10 border border-primary/20 text-primary text-[9px] font-bold rounded animate-pulse">
-                      RUNNING
-                    </span>
-                  </div>
-                  <p className="text-xs text-on-surface-variant mt-1 font-label-mono">v1.1.0-alpha</p>
-                </div>
-
-                <div className="flex gap-8 text-center text-xs items-center">
-                  <div>
-                    <div className="text-on-surface-variant font-label-mono uppercase text-[9px]">Precision</div>
-                    <div className="font-bold text-on-surface text-base mt-0.5">0.821</div>
-                  </div>
-                  <div>
-                    <div className="text-on-surface-variant font-label-mono uppercase text-[9px]">Recall</div>
-                    <div className="font-bold text-on-surface text-base mt-0.5">0.945</div>
-                  </div>
-                  <div>
-                    <div className="text-on-surface-variant font-label-mono uppercase text-[9px]">F1 Score</div>
-                    <div className="font-bold text-on-surface text-base mt-0.5">0.878</div>
-                  </div>
-                  <div className="flex gap-2 pl-4 border-l border-outline-variant/20">
-                    <button
-                      onClick={() => alert("Initiating version rollback.")}
-                      className="px-3 py-1.5 border border-outline/30 hover:border-risk-high/50 text-xs font-semibold text-risk-high rounded-lg hover:bg-white/5 transition-colors"
-                    >
-                      Rollback
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 3 */}
-              <div className="p-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h4 className="font-bold text-base text-on-surface">Isolation Forest Outlier</h4>
-                    <span className="px-2 py-0.5 bg-surface-container-highest border border-outline-variant/30 text-on-surface-variant text-[9px] font-bold rounded">
-                      IDLE
-                    </span>
-                  </div>
-                  <p className="text-xs text-on-surface-variant mt-1 font-label-mono">v4.0.0-legacy</p>
-                </div>
-
-                <div className="flex gap-8 text-center text-xs items-center">
-                  <div>
-                    <div className="text-on-surface-variant font-label-mono uppercase text-[9px]">Precision</div>
-                    <div className="font-bold text-on-surface text-base mt-0.5">0.742</div>
-                  </div>
-                  <div>
-                    <div className="text-on-surface-variant font-label-mono uppercase text-[9px]">Recall</div>
-                    <div className="font-bold text-on-surface text-base mt-0.5">0.710</div>
-                  </div>
-                  <div>
-                    <div className="text-on-surface-variant font-label-mono uppercase text-[9px]">F1 Score</div>
-                    <div className="font-bold text-on-surface text-base mt-0.5">0.725</div>
-                  </div>
-                  <div className="flex gap-2 pl-4 border-l border-outline-variant/20">
-                    <button
-                      onClick={() => alert("Model retrain initialized.")}
-                      className="px-3 py-1.5 border border-outline/30 hover:border-primary/50 text-xs font-semibold text-primary rounded-lg hover:bg-white/5 transition-colors"
-                    >
-                      Retrain Legacy
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Metrics specifics telemetry status */}
-          <section className="grid grid-cols-2 lg:grid-cols-4 gap-6 pt-4 border-t border-outline-variant/10 text-center font-label-mono text-[10px]">
-            <div>
-              <div className="text-on-surface font-bold text-base">42.8%</div>
-              <div className="text-on-surface-variant uppercase tracking-wider mt-1">Compute Load (Nominal)</div>
-            </div>
-            <div className="border-l border-outline-variant/10">
-              <div className="text-on-surface font-bold text-base">24ms</div>
-              <div className="text-on-surface-variant uppercase tracking-wider mt-1">Inference Latency (P99)</div>
-            </div>
-            <div className="border-l border-outline-variant/10">
-              <div className="text-on-surface font-bold text-base">1.4%</div>
-              <div className="text-on-surface-variant uppercase tracking-wider mt-1">Data Drift (Moderate)</div>
-            </div>
-            <div className="border-l border-outline-variant/10">
-              <div className="text-on-surface font-bold text-base">14:02:51</div>
-              <div className="text-on-surface-variant uppercase tracking-wider mt-1">Last Audit (ISO-27001)</div>
+            <div className="overflow-x-auto rounded-xl border border-outline-variant/20 bg-surface-container-low">
+              <table className="w-full text-left border-collapse table-fixed min-w-[700px]">
+                <thead className="bg-surface-container-high/20 border-b border-outline-variant/30">
+                  <tr className="text-on-surface-variant font-label-mono text-[9px] uppercase tracking-widest">
+                    <th className="px-4 py-4 w-32">Model Key</th>
+                    <th className="px-4 py-4">Architecture</th>
+                    <th className="px-4 py-4 w-28 text-center">F1 Score</th>
+                    <th className="px-4 py-4 w-28 text-center">Recall</th>
+                    <th className="px-4 py-4 w-32">Release Date</th>
+                    <th className="px-4 py-4 text-right w-24">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/10 text-xs">
+                  <tr className="hover:bg-surface-container-high/20 transition-colors">
+                    <td className="px-4 py-4 font-bold text-primary font-label-mono truncate">MS-GCN-V4.1</td>
+                    <td className="px-4 py-4 font-semibold text-on-surface truncate">Graph Convolutional Network (PyTorch)</td>
+                    <td className="px-4 py-4 text-center font-label-mono text-on-surface">0.962</td>
+                    <td className="px-4 py-4 text-center font-label-mono text-on-surface">94.1%</td>
+                    <td className="px-4 py-4 font-label-mono text-on-surface-variant truncate">2026-06-11</td>
+                    <td className="px-4 py-4 text-right">
+                      <span className="px-2 py-0.5 rounded bg-risk-low/15 border border-risk-low/20 text-risk-low font-bold">ACTIVE</span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-surface-container-high/20 transition-colors">
+                    <td className="px-4 py-4 font-bold text-primary font-label-mono truncate">MS-GBDT-V3.8</td>
+                    <td className="px-4 py-4 font-semibold text-on-surface truncate">Gradient Boosted Decision Trees (XGBoost)</td>
+                    <td className="px-4 py-4 text-center font-label-mono text-on-surface">0.924</td>
+                    <td className="px-4 py-4 text-center font-label-mono text-on-surface">88.5%</td>
+                    <td className="px-4 py-4 font-label-mono text-on-surface-variant truncate">2025-12-04</td>
+                    <td className="px-4 py-4 text-right">
+                      <span className="px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant/20 font-bold">SHADOW</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </section>
         </div>
       )}
 
+      {/* RENDER DIFFERENTIAL TAB */}
       {activeTab === "differential" && (
-        <div className="space-y-8">
+        <div className="space-y-8 text-left">
           <div>
-            <h2 className="text-xl font-bold text-on-surface">Model Performance Differential</h2>
+            <h2 className="text-xl font-bold text-on-surface">Champion vs Challenger Analysis</h2>
             <p className="text-body-sm text-on-surface-variant mt-1">
-              Comparing real-world performance of Champion (v4.2.0) vs Challenger (v4.3.0) in Shadow mode.
+              Compare output differences, covariate drift indices, and canary performance logs.
             </p>
           </div>
 
-          {/* Metric cards list */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="p-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-1">
-              <div className="text-[9px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
-                Precision Delta
-              </div>
-              <div className="text-2xl font-black text-risk-low font-display-kpi">
-                +4.2%
-              </div>
-              <div className="text-[8px] text-on-surface-variant">vs baseline v4.2.0</div>
-            </div>
-
-            <div className="p-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-1">
-              <div className="text-[9px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
-                Recall Delta
-              </div>
-              <div className="text-2xl font-black text-risk-low font-display-kpi">
-                +1.8%
-              </div>
-              <div className="text-[8px] text-on-surface-variant">Target: &gt;94.5%</div>
-            </div>
-
-            <div className="p-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-1">
-              <div className="text-[9px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
-                F1-Score
-              </div>
-              <div className="text-2xl font-black text-on-surface font-display-kpi">
-                0.962
-              </div>
-              <div className="text-[8px] text-on-surface-variant">Challenger Peak</div>
-            </div>
-
-            <div className="p-5 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-1">
-              <div className="text-[9px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
-                Inference Latency
-              </div>
-              <div className="text-2xl font-black text-risk-high font-display-kpi">
-                18ms
-              </div>
-              <div className="text-[8px] text-risk-high">+2ms regression</div>
-            </div>
-          </div>
-
-          {/* Middle details grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* ROC Curve Overlay */}
+            {/* Chart 1: Output Divergence (Champion vs Challenger) */}
             <div className="lg:col-span-2 p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-4">
-              <div className="flex justify-between items-center">
-                <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">ROC Curve Overlay</h4>
-                <div className="flex gap-4 text-[9px] font-label-mono">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-white"></span>
-                    <span className="text-on-surface-variant">v4.2.0 Champion</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-primary"></span>
-                    <span className="text-on-surface-variant">v4.3.0 Challenger</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="h-56 w-full">
+              <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">Output Anomaly Divergence</h4>
+              <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={championChallengerData} margin={{ left: -30, right: 0, top: 10, bottom: 0 }}>
-                    <XAxis dataKey="name" stroke="#8d90a0" style={{ fontSize: "8px" }} />
-                    <YAxis stroke="#8d90a0" style={{ fontSize: "8px" }} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="champion" stroke="#ffffff" strokeWidth={1.5} dot={false} strokeDasharray="3 3" />
-                    <Line type="monotone" dataKey="challenger" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                    <XAxis dataKey="name" stroke="#8d90a0" style={{ fontSize: "9px" }} />
+                    <YAxis stroke="#8d90a0" style={{ fontSize: "9px" }} />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="p-3 bg-surface-container-high border border-outline-variant/30 rounded-xl shadow-2xl text-[10px] font-label-mono">
+                              <p className="text-on-surface-variant">Threshold: {payload[0].payload.name}</p>
+                              <p className="text-primary mt-1">Champion: {payload[0].value}</p>
+                              <p className="text-risk-low">Challenger: {payload[1]?.value}</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Line type="monotone" dataKey="champion" stroke="#2563eb" strokeWidth={2} dot={false} name="Champion" />
+                    <Line type="monotone" dataKey="challenger" stroke="#10b981" strokeWidth={2} dot={false} name="Challenger" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            {/* Right side sheet compare details */}
-            <div className="lg:col-span-1 space-y-6">
-              {/* Champion specs */}
-              <div className="p-4 bg-[#07090e] border border-outline-variant/10 rounded-xl space-y-2">
-                <div className="flex justify-between items-center text-[10px] font-label-mono text-on-surface-variant uppercase">
-                  <span>v4.2.0 Champion</span>
-                  <span className="text-xs px-2 py-0.5 bg-surface-container-high rounded text-on-surface-variant">Production</span>
-                </div>
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between"><span>False Positives:</span><strong>1,242</strong></div>
-                  <div className="flex justify-between"><span>Accuracy:</span><strong>92.48%</strong></div>
-                </div>
-              </div>
+            {/* Canary deployment controls */}
+            <div className="lg:col-span-1 p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-6">
+              <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">Canary Rollout Planner</h4>
 
-              {/* Challenger specs */}
-              <div className="p-4 bg-[#07090e] border border-outline-variant/10 rounded-xl space-y-2">
-                <div className="flex justify-between items-center text-[10px] font-label-mono text-on-surface-variant uppercase">
-                  <span>v4.3.0 Challenger</span>
-                  <span className="text-xs px-2 py-0.5 bg-[#002a78]/30 rounded text-primary font-bold">Shadow</span>
+              <div className="space-y-4 text-xs">
+                <div className="space-y-1.5">
+                  <label className="text-on-surface-variant font-medium">Evaluation Routing mode</label>
+                  <div className="flex bg-surface-container-lowest rounded-xl border border-outline-variant/30 p-1">
+                    {["shadow", "canary", "linear"].map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setDeployMode(mode)}
+                        className={`flex-1 py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all ${
+                          deployMode === mode
+                            ? "bg-primary text-on-primary shadow-sm"
+                            : "text-on-surface-variant hover:text-on-surface"
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between"><span>False Positives:</span><strong className="text-risk-low">894 (-28%)</strong></div>
-                  <div className="flex justify-between"><span>Accuracy:</span><strong>96.61%</strong></div>
-                </div>
-              </div>
 
-              {/* Recommendation card */}
-              <div className="p-4 bg-[#101915] border border-risk-low/30 rounded-xl space-y-2 text-xs">
-                <div className="flex items-center gap-2 text-risk-low font-bold">
-                  <span className="material-symbols-outlined text-base">verified</span>
-                  AI Recommendation
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-[10px] font-label-mono uppercase tracking-wider text-on-surface-variant">
+                    <span>Canary Traffic Allocation</span>
+                    <span className="font-bold text-primary">{canaryTraffic}% Traffic</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={canaryTraffic}
+                    onChange={(e) => setCanaryTraffic(Number(e.target.value))}
+                    className="w-full h-1 bg-surface-container-high rounded-full appearance-none cursor-pointer accent-primary"
+                  />
                 </div>
-                <p className="text-on-surface-variant leading-relaxed text-[11px]">
-                  The Challenger v4.3.0 shows a significant reduction in false positives. Immediate Canary Rollout recommended.
-                </p>
+
+                <button
+                  onClick={handleRollout}
+                  className="w-full py-3 bg-primary text-on-primary font-bold rounded-xl text-body-sm hover:opacity-90 transition-all flex items-center justify-center gap-1.5 shadow-md"
+                >
+                  <span className="material-symbols-outlined text-sm">rocket_launch</span>
+                  Initiate Rollout
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Bottom Layout (Drift analysis & deployment control center) */}
+          {/* Row 2: Covariate Drift and metrics */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Drift Analysis */}
+            {/* Drift bar chart */}
             <div className="lg:col-span-2 p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-4">
-              <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">Drift Analysis</h4>
+              <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">Covariate Feature Drift</h4>
               <div className="h-44 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={driftData} margin={{ left: -30, right: 0, top: 10, bottom: 0 }}>
                     <XAxis dataKey="name" stroke="#8d90a0" style={{ fontSize: "8px" }} />
                     <YAxis stroke="#8d90a0" style={{ fontSize: "8px" }} />
-                    <Tooltip />
-                    <Bar dataKey="training" fill="#002a78" radius={[2, 2, 0, 0]} />
-                    <Bar dataKey="serving" fill="#3b82f6" radius={[2, 2, 0, 0]} />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="p-2 bg-surface-container-high border border-outline-variant/30 rounded text-[9px] font-label-mono">
+                              <p className="font-bold text-primary">Training: {payload[0].value}</p>
+                              <p className="font-bold text-risk-high">Serving: {payload[1]?.value}</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="training" fill="#2563eb" radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="serving" fill="#f97316" radius={[2, 2, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            {/* Deployment control center */}
-            <div className="lg:col-span-1 p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-6">
-              <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">Deployment Control Center</h4>
-
-              <div className="space-y-4">
-                <div className="flex bg-[#07090e] rounded-xl border border-outline-variant/30 p-1 text-xs">
-                  {["shadow", "canary", "full"].map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setDeployMode(mode)}
-                      className={`flex-1 py-2 rounded-lg text-[9px] font-bold uppercase ${
-                        deployMode === mode
-                          ? "bg-primary text-on-primary"
-                          : "text-on-surface-variant hover:text-on-surface"
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
+            {/* PSI Index status */}
+            <div className="lg:col-span-1 p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-4">
+              <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">Population Stability Index</h4>
+              <div className="space-y-4 pt-2">
+                <div className="p-4 rounded-xl border border-outline-variant/20 bg-surface-container-lowest flex justify-between items-center">
+                  <div>
+                    <h5 className="font-bold text-xs text-on-surface">PSI Value</h5>
+                    <p className="text-[10px] text-on-surface-variant mt-0.5">Calculated in last 1hr batch</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-black text-risk-low font-display-kpi">0.082</div>
+                    <span className="text-[8px] font-semibold text-risk-low uppercase tracking-widest font-label-mono">Stable</span>
+                  </div>
                 </div>
 
-                {deployMode === "canary" && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-[9px] font-label-mono uppercase tracking-wider text-on-surface-variant">
-                      <span>Canary Traffic Ratio</span>
-                      <span className="font-bold text-primary">{canaryTraffic}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="100"
-                      value={canaryTraffic}
-                      onChange={(e) => setCanaryTraffic(Number(e.target.value))}
-                      className="w-full h-1 bg-surface-container-high rounded-full appearance-none cursor-pointer accent-primary"
-                    />
-                  </div>
-                )}
-
-                <button
-                  onClick={handleRollout}
-                  className="w-full py-3 bg-primary text-on-primary font-bold text-xs rounded-xl hover:opacity-90 transition-all flex items-center justify-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-sm font-semibold">rocket_launch</span>
-                  Rollout Selection
-                </button>
+                <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                  Feature drift is within acceptable boundaries (PSI &lt; 0.1). Model inputs match the distribution seen during training.
+                </p>
               </div>
             </div>
           </div>

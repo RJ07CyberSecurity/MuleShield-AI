@@ -3,6 +3,11 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useUIStore } from "../../../store/useUIStore";
+import { AnimatePresence, motion } from "framer-motion";
+import ReportGenerator from "../../../components/dashboard/ReportGenerator";
+import NetworkGraph from "../../../components/dashboard/NetworkGraph";
+import { apiClient } from "../../../services/api-client";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -11,17 +16,45 @@ interface PageProps {
 export default function CaseDetailPage({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
+  const { addToast } = useUIStore();
   const [isFrozen, setIsFrozen] = useState(false);
   const [assigned, setAssigned] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [piiRevealed, setPiiRevealed] = useState(false);
 
-  const handleFreeze = () => {
-    setIsFrozen(true);
-    alert("CRITICAL RESPONSE TRIGGERED: Host node and linked accounts assets frozen successfully.");
-    setTimeout(() => setIsFrozen(false), 3000);
+  const handleFreeze = async () => {
+    try {
+      // In production, gets active account number from dossier details
+      const response = await apiClient.post<any>(`/api/v1/cases/${id}/freeze-account`, {
+        account_number: "ACC-092281",
+        legal_reference: "SEC-COMP-5421A"
+      });
+      if (response.success) {
+        setIsFrozen(true);
+        addToast("CRITICAL RESPONSE: Host node and linked accounts assets frozen successfully.", "error");
+      } else {
+        addToast(response.message || "Failed to freeze account assets.", "error");
+      }
+    } catch (err: any) {
+      addToast("RBAC Access Denied: Compliance Officer roles required to freeze assets.", "error");
+    }
+  };
+
+  const handleRevealPII = async () => {
+    try {
+      // Triggers the Backend GET /cases/{id} logic which registers the PII_REVEAL AuditLog
+      const response = await apiClient.get<any>(`/api/v1/cases/${id}`);
+      if (response.success) {
+        setPiiRevealed(true);
+        addToast("PII Revealed. Access logged to compliance audit trail.", "success");
+      }
+    } catch (err) {
+      addToast("Failed to register PII audit access lookup.", "error");
+    }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-left">
       {/* Back button */}
       <div>
         <Link
@@ -40,7 +73,7 @@ export default function CaseDetailPage({ params }: PageProps) {
             <span className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
               Dossier: Account Forensic
             </span>
-            <span className="px-2.5 py-0.5 bg-risk-critical/15 border border-risk-critical/30 text-risk-critical text-[10px] font-label-mono uppercase tracking-wider rounded">
+            <span className="px-2.5 py-0.5 bg-risk-critical/15 border border-risk-critical/30 text-risk-critical text-[10px] font-label-mono uppercase tracking-wider rounded font-bold">
               Critical Threat
             </span>
           </div>
@@ -69,7 +102,7 @@ export default function CaseDetailPage({ params }: PageProps) {
           <button
             onClick={() => {
               setAssigned(true);
-              alert("Case successfully assigned to Sarah Chambers (CCO).");
+              addToast("Case successfully assigned to Sarah Chambers (CCO).", "success");
             }}
             className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 rounded-xl text-body-sm font-semibold transition-colors flex items-center gap-2 text-on-surface"
           >
@@ -78,7 +111,7 @@ export default function CaseDetailPage({ params }: PageProps) {
           </button>
 
           <button
-            onClick={() => alert("Forensic Dossier PDF exported successfully.")}
+            onClick={() => setShowReportModal(true)}
             className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 rounded-xl text-body-sm font-semibold transition-colors flex items-center gap-2 text-on-surface"
           >
             <span className="material-symbols-outlined text-sm">description</span>
@@ -133,6 +166,7 @@ export default function CaseDetailPage({ params }: PageProps) {
                   fill="transparent"
                   strokeDasharray="238"
                   strokeDashoffset={50}
+                  className="transition-all duration-500 ease-out"
                 />
               </svg>
               <div className="absolute flex flex-col items-center justify-center">
@@ -155,52 +189,28 @@ export default function CaseDetailPage({ params }: PageProps) {
           </div>
 
           {/* SHAP Contributors */}
-          <div className="space-y-3 pt-4 border-t border-outline-variant/10">
+          <div className="space-y-3 pt-4 border-t border-outline-variant/10 text-xs">
             <div className="text-[10px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
               SHAP Contributors
             </div>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between items-center p-3 rounded-lg bg-[#07090e] border border-outline-variant/10">
-                <span className="text-on-surface-variant font-medium">Rapid In-Out Flow</span>
-                <span className="font-bold text-risk-critical">+42.2</span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-lg bg-[#07090e] border border-outline-variant/10">
-                <span className="text-on-surface-variant font-medium">New Device (Lagos, NG)</span>
-                <span className="font-bold text-risk-high">+15.1</span>
-              </div>
-              <div className="flex justify-between items-center p-3 rounded-lg bg-[#07090e] border border-outline-variant/10">
-                <span className="text-on-surface-variant font-medium">Unusual Nighttime Activity</span>
-                <span className="font-bold text-risk-high">+12.4</span>
-              </div>
+            <div className="flex justify-between items-center p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10">
+              <span className="text-on-surface-variant font-medium">Rapid In-Out Flow</span>
+              <span className="font-bold text-risk-critical">+34.2</span>
             </div>
-          </div>
-
-          {/* Triggered Rules */}
-          <div className="space-y-2.5 pt-4 border-t border-outline-variant/10">
-            <div className="text-[10px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
-              Triggered Rules
-            </div>
-            <div className="flex flex-wrap gap-2 text-[9px] font-label-mono">
-              <span className="px-2.5 py-1 bg-risk-critical/15 border border-risk-critical/30 rounded text-risk-critical font-bold">
-                R3: RAPID_IN_OUT
-              </span>
-              <span className="px-2.5 py-1 bg-risk-high/15 border border-risk-high/30 rounded text-risk-high font-bold">
-                R14: IMP_TRAVEL
-              </span>
-              <span className="px-2.5 py-1 bg-surface-container-high border border-outline-variant/30 rounded text-on-surface-variant">
-                R82: HIGH_VAL_ROUND
-              </span>
+            <div className="flex justify-between items-center p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10">
+              <span className="text-on-surface-variant font-medium">Device Token Conflict</span>
+              <span className="font-bold text-risk-high">+24.8</span>
             </div>
           </div>
         </div>
 
-        {/* Column 2: Subject Profile Card (Vasily Kandinsky) */}
+        {/* Column 2: Subject Profile */}
         <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-6">
-          <div className="flex justify-between items-start">
+          <div className="flex justify-between items-center">
             <h3 className="font-headline-sm text-xs font-bold text-on-surface uppercase tracking-wider">
               Subject Profile
             </h3>
-            <span className="material-symbols-outlined text-on-surface-variant text-base">open_in_new</span>
+            <span className="material-symbols-outlined text-on-surface-variant text-base cursor-pointer hover:text-primary transition-colors">open_in_new</span>
           </div>
 
           <div className="flex gap-4 items-center">
@@ -223,8 +233,16 @@ export default function CaseDetailPage({ params }: PageProps) {
           {/* Profiler list info */}
           <div className="space-y-4 pt-4 border-t border-outline-variant/10 text-xs">
             <div className="flex justify-between items-center">
+              <span className="text-on-surface-variant font-medium">Email Address</span>
+              <span className="text-on-surface font-semibold font-label-mono">{piiRevealed ? "kandinsky@bankgeneva.ch" : "ka••••••••@bankgeneva.ch"}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-on-surface-variant font-medium">Phone Number</span>
+              <span className="text-on-surface font-semibold font-label-mono">{piiRevealed ? "+41 22 798 1204" : "+41 22 •••• ••••"}</span>
+            </div>
+            <div className="flex justify-between items-center">
               <span className="text-on-surface-variant font-medium">Annual Income</span>
-              <span className="text-primary font-bold font-label-mono">$500k+ USD</span>
+              <span className="text-primary font-bold font-label-mono">{piiRevealed ? "$500k+ USD" : "$•••••• USD"}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-on-surface-variant font-medium">Onboarding Date</span>
@@ -238,6 +256,16 @@ export default function CaseDetailPage({ params }: PageProps) {
             </div>
           </div>
 
+          {!piiRevealed && (
+            <button
+              onClick={handleRevealPII}
+              className="w-full py-2 bg-primary/10 hover:bg-primary/20 border border-primary/25 rounded-xl text-[10px] font-bold text-primary transition-colors flex items-center justify-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm">visibility</span>
+              Reveal PII & Audit Access
+            </button>
+          )}
+
           {/* KYC validation stats */}
           <div className="pt-6 border-t border-outline-variant/10 space-y-4">
             <div className="flex items-center gap-2 text-risk-low text-xs font-bold">
@@ -247,13 +275,22 @@ export default function CaseDetailPage({ params }: PageProps) {
 
             {/* Quick action icons */}
             <div className="grid grid-cols-3 gap-3">
-              <div className="p-3 bg-[#07090e] border border-outline-variant/20 rounded-xl flex items-center justify-center">
+              <div
+                onClick={() => addToast("Viewing user digital verification dossier", "info")}
+                className="p-3 bg-surface-container-lowest border border-outline-variant/20 rounded-xl flex items-center justify-center cursor-pointer hover:border-primary/40 transition-colors"
+              >
                 <span className="material-symbols-outlined text-primary text-base">contact_page</span>
               </div>
-              <div className="p-3 bg-[#07090e] border border-outline-variant/20 rounded-xl flex items-center justify-center">
+              <div
+                onClick={() => addToast("Loading login trace coordinates heatmap", "info")}
+                className="p-3 bg-surface-container-lowest border border-outline-variant/20 rounded-xl flex items-center justify-center cursor-pointer hover:border-primary/40 transition-colors"
+              >
                 <span className="material-symbols-outlined text-primary text-base">location_on</span>
               </div>
-              <div className="p-3 bg-[#07090e] border border-outline-variant/20 rounded-xl flex items-center justify-center">
+              <div
+                onClick={() => addToast("Fetching bank partner settlement ledger metadata", "info")}
+                className="p-3 bg-surface-container-lowest border border-outline-variant/20 rounded-xl flex items-center justify-center cursor-pointer hover:border-primary/40 transition-colors"
+              >
                 <span className="material-symbols-outlined text-primary text-base">account_balance</span>
               </div>
             </div>
@@ -311,13 +348,13 @@ export default function CaseDetailPage({ params }: PageProps) {
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-center">
-              <div className="p-3 rounded-xl bg-[#07090e] border border-outline-variant/10">
+              <div className="p-3 rounded-xl bg-surface-container-lowest border border-outline-variant/10">
                 <div className="text-lg font-bold text-on-surface">84</div>
                 <div className="text-[8px] font-label-mono text-on-surface-variant uppercase tracking-wider mt-1">
                   Txns / 24H
                 </div>
               </div>
-              <div className="p-3 rounded-xl bg-[#07090e] border border-outline-variant/10">
+              <div className="p-3 rounded-xl bg-surface-container-lowest border border-outline-variant/10">
                 <div className="text-lg font-bold text-on-surface">12</div>
                 <div className="text-[8px] font-label-mono text-on-surface-variant uppercase tracking-wider mt-1">
                   Txns / Avg
@@ -340,52 +377,18 @@ export default function CaseDetailPage({ params }: PageProps) {
               <span className="px-2.5 py-0.5 bg-risk-critical/15 border border-risk-critical/30 text-risk-critical text-[9px] font-label-mono uppercase tracking-wider rounded">
                 Suspicious Nodes (3)
               </span>
-              <span className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-base cursor-pointer">
+              <span
+                onClick={() => addToast("Toggled Network Canvas Fullscreen", "info")}
+                className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-base cursor-pointer transition-colors"
+              >
                 fullscreen
               </span>
             </div>
           </div>
 
-          {/* Custom node layout drawing */}
-          <div className="relative w-full aspect-[16/6] border border-outline-variant/20 rounded-xl overflow-hidden bg-[#07090e] my-4 flex items-center justify-center">
-            <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#434655_1px,transparent_1px)] [background-size:16px_16px]"></div>
-
-            {/* Simulated Nodes & Links */}
-            <div className="relative flex items-center gap-24 z-10 font-label-mono text-[9px]">
-              {/* Linked device */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="p-3 border border-outline-variant/30 rounded-xl bg-surface-container-low text-center">
-                  <span className="material-symbols-outlined text-primary text-base">smartphone</span>
-                  <div className="text-on-surface-variant mt-1.5 uppercase font-bold text-[8px]">LNK_DEV_4</div>
-                </div>
-              </div>
-
-              {/* Arrow */}
-              <div className="w-12 h-[2px] bg-primary/40 relative">
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-primary rounded-full animate-ping"></div>
-              </div>
-
-              {/* Subject Account */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="p-4 border-2 border-risk-critical/50 rounded-xl bg-[#0d0f19] text-center shadow-lg shadow-risk-critical/10">
-                  <span className="material-symbols-outlined text-risk-critical text-xl font-bold">account_balance</span>
-                  <div className="text-on-surface mt-1.5 font-bold uppercase text-[9px]">Subject_Acc</div>
-                </div>
-              </div>
-
-              {/* Arrow */}
-              <div className="w-12 h-[2px] bg-primary/40 relative">
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 bg-primary rounded-full animate-ping"></div>
-              </div>
-
-              {/* Beneficiary */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="p-3 border border-outline-variant/30 rounded-xl bg-surface-container-low text-center">
-                  <span className="material-symbols-outlined text-primary text-base">person</span>
-                  <div className="text-on-surface-variant mt-1.5 uppercase font-bold text-[8px]">Bene_211</div>
-                </div>
-              </div>
-            </div>
+          {/* Interactive Network Graph */}
+          <div className="w-full my-4 flex-grow flex flex-col min-h-[300px]">
+            <NetworkGraph accountId={id} />
           </div>
 
           {/* Bottom count specifications */}
@@ -412,10 +415,16 @@ export default function CaseDetailPage({ params }: PageProps) {
               Timeline
             </h3>
             <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-base cursor-pointer">
+              <span
+                onClick={() => addToast("Filtering timeline logs", "info")}
+                className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-base cursor-pointer transition-colors"
+              >
                 filter_alt
               </span>
-              <span className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-base cursor-pointer">
+              <span
+                onClick={() => addToast("Exporting timeline events ledger to CSV", "success")}
+                className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-base cursor-pointer transition-colors"
+              >
                 download
               </span>
             </div>
@@ -483,6 +492,33 @@ export default function CaseDetailPage({ params }: PageProps) {
           <span className="text-risk-low">Security Status: V.4.2 Active</span>
         </div>
       </footer>
+
+      {/* Report Generator Modal Overlay */}
+      <AnimatePresence>
+        {showReportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-xl flex justify-center"
+            >
+              <div className="absolute top-2 right-2 z-10">
+                <button
+                  onClick={() => setShowReportModal(false)}
+                  className="p-1.5 rounded-full bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              </div>
+              <ReportGenerator
+                accountId={id}
+                caseId={id}
+              />
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
