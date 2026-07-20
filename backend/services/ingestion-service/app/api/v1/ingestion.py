@@ -546,26 +546,41 @@ async def confirm_ingestion(
         )
         
     # 2. Sync accounts (creates any sender or receiver account nodes that don't exist yet)
-    unique_accts = set()
+    unique_accts = {}
     for t in txs:
-        unique_accts.add((t.sender_account, t.currency))
-        unique_accts.add((t.receiver_account, t.currency))
+        if t.sender_account not in unique_accts:
+            unique_accts[t.sender_account] = {
+                "currency": t.currency,
+                "ifsc": t.ifsc or "MSAI0000101",
+                "bank_name": t.bank_name or "MuleShield Mock Bank",
+                "branch": t.branch or "Compliance Branch"
+            }
+        if t.receiver_account not in unique_accts:
+            unique_accts[t.receiver_account] = {
+                "currency": t.currency,
+                "ifsc": t.ifsc or "MSAI0000101",
+                "bank_name": t.bank_name or "MuleShield Mock Bank",
+                "branch": t.branch or "Compliance Branch"
+            }
         
-    for acct_num, currency in unique_accts:
+    for acct_num, details in unique_accts.items():
         acct_stmt = select(Account).where(Account.account_number == acct_num)
         acct_res = await db.execute(acct_stmt)
         acct = acct_res.scalars().first()
         
         if not acct:
-            # Create a mock account with a default balance & customer ID
+            # Create a mock account with a default balance
             logger.info("Auto-registering account node during statement confirmation", account_number=acct_num)
             new_acct = Account(
                 id=uuid.uuid4(),
-                customer_id=uuid.uuid4(),  # Mock compliance customer binder
+                customer_id=None,
                 account_number=acct_num,
-                type="CHECKING",
+                ifsc=details["ifsc"],
+                bank_name=details["bank_name"],
+                branch=details["branch"],
+                account_type="CHECKING",
                 balance=Decimal("25000.00"),  # Default opening mockup balance
-                currency=currency,
+                currency=details["currency"],
                 status="ACTIVE"
             )
             db.add(new_acct)
