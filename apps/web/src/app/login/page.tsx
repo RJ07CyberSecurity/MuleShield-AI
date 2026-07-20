@@ -548,6 +548,14 @@ export default function LoginPage() {
               </button>
             </div>
           </div>
+
+          {/* Sign Up CTA */}
+          <p className="text-center text-body-sm text-on-surface-variant pt-2">
+            Don&apos;t have an account?{" "}
+            <Link href="/signup" className="text-primary font-bold hover:underline">
+              Create Account
+            </Link>
+          </p>
         </div>
 
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-caption text-on-surface-variant/60 font-label-mono pt-12 border-t border-outline-variant/10 max-w-md w-full mx-auto">

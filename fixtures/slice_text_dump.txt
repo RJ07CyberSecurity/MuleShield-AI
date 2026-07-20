@@ -1,0 +1,33 @@
+01 Jul '26 - 20 Jul '26
+1/3
+RUDRAKUMAR CHETANKUMAR JOSHI
+Customer ID 380004526061 Account SAVINGS
+Phone 7359327822 A/C number 033325223725759
+Email rudrajoshi2586@gmail.com IFSC NESF0000333
+Nominee - Alternate IFSC NESF0000096
+Address HARIDARSHAN ROAD, BOTAD, GUJARAT, INDIA, MICR 560773002
+364710
+Branch Ground Floor, Ashford Park View, Indiqube, 80
+Account Opening 09 Mar '26 Feet Rd, 3rd Block, Koramangala, Bengaluru,
+Date Karnataka, INDIA, 560034
+Opening balance Total credits Interest earned Total debits Closing balance
++ + - =
+₹77.99 ₹820 ₹0.85 ₹503.6 ₹395.24
+DATE DETAILS REF NO. AMOUNT BALANCE
+01 Jul '26 Interest Cr. for 30-Jun-2026 2022618238264 ₹0.01 ₹78
+01 Jul '26 NEFT Credit-BLINK COMMERCE PRIVATE LIMITE 202261822196614 ₹300 ₹378
+D-ICIC0099999-XX5759-ICICN2202607014235
+6023
+02 Jul '26 Interest Cr. for 01-Jul-2026 2022618354014 ₹0.05 ₹378.05
+02 Jul '26 UPI-Debit-618345591706-YOGESHBHAI PRAVIN 20260702115122501 -₹1 ₹377.05
+BHA-UTIB-7041228410@okbizaxis
+03 Jul '26 Interest Cr. for 02-Jul-2026 2022618452384 ₹0.05 ₹377.1
+04 Jul '26 Interest Cr. for 03-Jul-2026 2022618553124 ₹0.05 ₹377.15
+05 Jul '26 Interest Cr. for 04-Jul-2026 2022618654394 ₹0.05 ₹377.2
+06 Jul '26 Interest Cr. for 05-Jul-2026 2022618748664 ₹0.05 ₹377.25
+06 Jul '26 UPI-Credit-309900755518-AGRAWAL KRISHIL-A 20260706396845601 ₹50 ₹427.25
+UBL-8320902499@ptyes-Injection
+07 Jul '26 Interest Cr. for 06-Jul-2026 2022618847194 ₹0.06 ₹427.31
+08 Jul '26 Interest Cr. for 07-Jul-2026 2022618951704 ₹0.06 ₹427.37
+09 Jul '26 Interest Cr. for 08-Jul-2026 2022619045984 ₹0.06 ₹427.43
+Need help? Contact our support team at help@slice.bank.in or +91-8048329999 slice small finance bank

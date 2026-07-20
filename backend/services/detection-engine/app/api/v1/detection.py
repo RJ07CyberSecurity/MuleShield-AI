@@ -334,41 +334,46 @@ async def list_flagged_accounts(
                 data=[]
             )
             
-        alert_stmt = select(Alert, Account).join(
+        alert_stmt = select(Alert, Account, RiskScore).join(
             Account, Alert.account_id == Account.id
+        ).outerjoin(
+            RiskScore, Alert.risk_score_id == RiskScore.id
         ).where(
             Alert.account_id.in_(acct_ids),
-            Alert.status != "DISMISSED"
-        ).order_by(Alert.score.desc())
+            Alert.status != "CLOSED_FALSE_POSITIVE"
+        ).order_by(RiskScore.final_score.desc())
     else:
-        alert_stmt = select(Alert, Account).join(
+        alert_stmt = select(Alert, Account, RiskScore).join(
             Account, Alert.account_id == Account.id
+        ).outerjoin(
+            RiskScore, Alert.risk_score_id == RiskScore.id
         ).where(
-            Alert.status != "DISMISSED"
-        ).order_by(Alert.score.desc())
+            Alert.status != "CLOSED_FALSE_POSITIVE"
+        ).order_by(RiskScore.final_score.desc())
         
     res = await db.execute(alert_stmt)
     results = res.all()
     
     flagged = []
-    import json
     
-    for alert, account in results:
+    for alert, account, risk_score in results:
         factors = []
-        try:
-            parsed = json.loads(alert.trigger_reason)
-            factors = parsed.get("factors", [])
-        except Exception:
-            factors = [{"rule": "UNKNOWN", "reason": alert.trigger_reason, "weight": int(alert.score)}]
+        final_score = int(risk_score.final_score) if risk_score else 0
+        severity = risk_score.risk_band if risk_score else "LOW"
+        
+        if risk_score and risk_score.explainability_payload:
+            factors = risk_score.explainability_payload.get("factors", [])
+        else:
+            factors = [{"rule": "UNKNOWN", "reason": "No factors available", "weight": final_score}]
             
         flagged.append(FlaggedAccountResponse(
             account_id=str(account.id),
             account_number=account.account_number,
-            risk_score=int(alert.score),
-            severity=alert.severity,
+            risk_score=final_score,
+            severity=severity,
             factors=factors,
             balance=float(account.balance),
-            currency=account.currency,
+            currency="USD",
             status=account.status
         ))
         

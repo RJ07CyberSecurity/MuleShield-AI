@@ -8,7 +8,7 @@ settings = BaseAppSettings()
 logger = structlog.get_logger(__name__)
 
 # Paths to trained model artifacts
-MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "ai", "models"))
+MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "ai", "models"))
 XGB_PATH = os.path.join(MODEL_DIR, "xgb_mule_detector.pkl")
 IFOREST_PATH = os.path.join(MODEL_DIR, "iforest_anomaly.pkl")
 

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { apiClient } from "../../../services/api-client";
 
 export default function VerifyPage() {
   const router = useRouter();
@@ -25,10 +26,13 @@ export default function VerifyPage() {
   }, []);
 
   const handleChange = (value: string, index: number) => {
-    if (isNaN(Number(value))) return;
+    if (isNaN(Number(value))) return; // only allow numbers
+
     const newDigits = [...digits];
-    newDigits[index] = value.substring(value.length - 1);
+    newDigits[index] = value.substring(value.length - 1); // Keep last character only
     setDigits(newDigits);
+
+    // Automatically shift focus to next input
     if (value && index < 5 && inputRefs.current[index + 1]) {
       inputRefs.current[index + 1].focus();
     }
@@ -37,11 +41,13 @@ export default function VerifyPage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
     if (e.key === "Backspace") {
       if (!digits[index] && index > 0 && inputRefs.current[index - 1]) {
+        // Clear previous input and focus it
         const newDigits = [...digits];
         newDigits[index - 1] = "";
         setDigits(newDigits);
         inputRefs.current[index - 1].focus();
       } else if (digits[index]) {
+        // Clear current input
         const newDigits = [...digits];
         newDigits[index] = "";
         setDigits(newDigits);
@@ -57,51 +63,29 @@ export default function VerifyPage() {
     setIsLoading(true);
 
     try {
-      // Retrieve the pending confirmationResult stored in sessionStorage by Phone OTP flow
-      const storedResult = typeof window !== "undefined" ? sessionStorage.getItem("phoneConfirmationResult") : null;
-
-      if (storedResult) {
-        // Phone OTP path — use the stored confirmationResult
-        const { auth } = await import("../../../services/firebase");
-        const { PhoneAuthProvider, signInWithCredential } = await import("firebase/auth");
-        const verificationId = storedResult;
-        const credential = PhoneAuthProvider.credential(verificationId, otp);
-        const userCredential = await signInWithCredential(auth, credential);
-        const idToken = await userCredential.user.getIdToken();
-
-        const { apiClient } = await import("../../../services/api-client");
-        const response = await apiClient.post<any>("/api/v1/auth/firebase-login", { id_token: idToken });
-        if (response.success) {
-          sessionStorage.removeItem("phoneConfirmationResult");
-          localStorage.setItem("token", response.data.access_token);
-          localStorage.setItem("refresh_token", response.data.refresh_token);
-          router.push("/dashboard");
-        } else {
-          setError(response.message || "Verification failed");
-          const next = attempts + 1;
-          setAttempts(next);
-          if (next >= 3) router.push("/locked");
-        }
+      const response = await apiClient.post<any>("/api/v1/auth/mfa/login-verify", {
+        email,
+        code: otp,
+      });
+      if (response.success) {
+        localStorage.setItem("token", response.data.access_token);
+        localStorage.setItem("refresh_token", response.data.refresh_token);
+        router.push("/dashboard");
       } else {
-        // Legacy MFA TOTP path
-        const { apiClient } = await import("../../../services/api-client");
-        const response = await apiClient.post<any>("/api/v1/auth/mfa/login-verify", { email, code: otp });
-        if (response.success) {
-          localStorage.setItem("token", response.data.access_token);
-          localStorage.setItem("refresh_token", response.data.refresh_token);
-          router.push("/dashboard");
-        } else {
-          setError(response.message || "Invalid verification code");
-          const next = attempts + 1;
-          setAttempts(next);
-          if (next >= 3) router.push("/locked");
+        setError(response.message || "Invalid verification code");
+        const nextAttempts = attempts + 1;
+        setAttempts(nextAttempts);
+        if (nextAttempts >= 3) {
+          router.push("/locked");
         }
       }
     } catch (err: any) {
       setError(err.message || "Verification failed");
-      const next = attempts + 1;
-      setAttempts(next);
-      if (next >= 3) router.push("/locked");
+      const nextAttempts = attempts + 1;
+      setAttempts(nextAttempts);
+      if (nextAttempts >= 3) {
+        router.push("/locked");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -126,12 +110,15 @@ export default function VerifyPage() {
 
       {/* Left Column (Sentinel Auth branding & risk widgets) */}
       <div className="w-full md:w-[45%] bg-[#090b12] border-r border-outline-variant/10 p-8 md:p-16 flex flex-col justify-between relative overflow-hidden">
+        {/* Glow background */}
         <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-[#2563eb]/5 rounded-full blur-3xl pointer-events-none"></div>
 
+        {/* Brand */}
         <div className="font-label-mono text-sm text-on-surface uppercase tracking-widest font-extrabold select-none">
           Sentinel Auth
         </div>
 
+        {/* Middle text */}
         <div className="my-12 md:my-0 space-y-6">
           <h3 className="font-headline-sm text-base text-on-surface uppercase tracking-wider font-bold">
             Neural Risk Analysis
@@ -141,6 +128,7 @@ export default function VerifyPage() {
           </p>
         </div>
 
+        {/* Stats widgets */}
         <div className="grid grid-cols-1 gap-4 pt-8 border-t border-outline-variant/10">
           <div className="flex gap-4">
             <div className="flex-1 p-4 bg-[#0d0f19] border border-outline-variant/20 rounded-xl space-y-1">
@@ -191,7 +179,7 @@ export default function VerifyPage() {
           <div className="space-y-2">
             <h1 className="text-2xl font-bold text-on-surface">Security Verification</h1>
             <p className="text-body-sm text-on-surface-variant leading-relaxed">
-              Enter the 6-digit code from your authenticator app or SMS to secure your access.
+              Enter the 6-digit code from your authenticator app to secure your access.
             </p>
           </div>
 
@@ -244,17 +232,11 @@ export default function VerifyPage() {
             </button>
 
             <div className="flex items-center justify-center gap-3 text-[10px] font-label-mono text-on-surface-variant/60 uppercase tracking-widest pt-2">
-              <span
-                className="hover:text-primary cursor-pointer transition-colors"
-                onClick={() => router.push("/login")}
-              >
-                Back to Login
+              <span className="hover:text-primary cursor-pointer transition-colors" onClick={() => alert("SMS OTP code triggered.")}>
+                SMS Verification
               </span>
               <span>•</span>
-              <span
-                className="hover:text-primary cursor-pointer transition-colors"
-                onClick={() => router.push("/forgot-password")}
-              >
+              <span className="hover:text-primary cursor-pointer transition-colors" onClick={() => router.push("/forgot-password")}>
                 Recovery Code
               </span>
             </div>

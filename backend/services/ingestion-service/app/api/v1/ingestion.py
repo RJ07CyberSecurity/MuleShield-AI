@@ -106,13 +106,53 @@ def parse_csv(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
     return valid, invalid
 
 
+def _clean_amount(val: str) -> Decimal | None:
+    """Parse an amount string from a bank statement, returning None if unparseable."""
+    if not val:
+        return None
+    cleaned = re.sub(r"[₹$,\s]", "", str(val)).strip()
+    # Remove trailing alphabetic junk (e.g. "1,200Cr" → "1200")
+    cleaned = re.sub(r"[A-Za-z]+$", "", cleaned)
+    if not cleaned:
+        return None
+    try:
+        return Decimal(cleaned)
+    except Exception:
+        return None
+
+
+def _parse_date(val: str) -> datetime | None:
+    """Try parsing Indian and ISO date formats."""
+    if not val:
+        return None
+    val = str(val).strip()
+    # Try various formats
+    formats = [
+        "%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y",
+        "%Y-%m-%d", "%d %b %Y", "%d %b %y", "%b %d %Y",
+        "%d/%m/%Y %H:%M:%S", "%d-%m-%Y %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S",
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(val, fmt)
+        except ValueError:
+            continue
+    try:
+        return pd.to_datetime(val).to_pydatetime()
+    except Exception:
+        return None
+
+
 def parse_pdf(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
     valid = []
     invalid = []
-    
+
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             all_text = ""
+            all_tables = []
+
             for page in pdf.pages:
                 text = page.extract_text()
                 if text:
@@ -193,34 +233,64 @@ def parse_pdf(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
             # Unruled / text fallback
             if not valid:
                 lines = all_text.split("\n")
+                
+                # Try to extract the account owner from the top of the file
+                account_owner = "UNKNOWN_ACCOUNT"
+                for line in lines[:30]:
+                    if "A/C number" in line:
+                        m = re.search(r"A/C number\s+(\d+)", line)
+                        if m: account_owner = m.group(1)
+                    elif "Account No" in line:
+                        m = re.search(r"Account No\s+(\d+)", line)
+                        if m: account_owner = m.group(1)
+                        
                 for line_idx, line in enumerate(lines):
                     line = line.strip()
                     if not line:
                         continue
                     
-                    # Pattern Match: Match Date, Amount, and 2 Accounts
-                    date_match = re.search(r"(\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?)", line)
-                    amount_match = re.search(r"(\d+(?:\.\d{2})?)", line)
-                    accounts = re.findall(r"([a-zA-Z0-9-]{8,25})", line)
+                    # Pattern Match: Match Date, Amount
+                    # Dates: YYYY-MM-DD or DD/MM/YY or DD MMM 'YY (e.g., 01 Jul '26)
+                    date_match = re.search(r"(\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{2,4}|\d{2}\s+[a-zA-Z]{3}\s+'?\d{2,4})", line)
                     
-                    # Clean accounts of punctuation-likes
-                    accounts = [acc for acc in accounts if not re.match(r"^\d{4}-\d{2}-\d{2}$", acc) and not re.match(r"^\d+\.\d{2}$", acc)]
+                    # Rupee based amounts e.g., ₹300, -₹1
+                    rupee_matches = re.findall(r"(-?₹[\d,]+(?:\.\d{1,2})?)", line)
                     
-                    if date_match and amount_match and len(accounts) >= 2:
+                    if date_match and rupee_matches:
                         try:
-                            timestamp = pd.to_datetime(date_match.group(1)).to_pydatetime()
-                            amount = Decimal(amount_match.group(1))
-                            sender = accounts[0]
-                            receiver = accounts[1]
+                            amt_str = rupee_matches[0].replace("₹", "").replace(",", "")
+                            amount = Decimal(amt_str)
+                            
+                            # Clean up the date
+                            date_str = date_match.group(1).replace("'", "20") # '26 -> 2026
+                            try:
+                                timestamp = pd.to_datetime(date_str).to_pydatetime()
+                            except Exception:
+                                timestamp = datetime.utcnow()
+                                
+                            counterparty = line.replace(date_match.group(1), "")
+                            for r in rupee_matches:
+                                counterparty = counterparty.replace(r, "")
+                            counterparty = counterparty.strip()[:50]
+                            
+                            if amount < 0:
+                                sender = account_owner
+                                receiver = counterparty
+                                amount = abs(amount)
+                                txn_type = "DEBIT"
+                            else:
+                                sender = counterparty
+                                receiver = account_owner
+                                txn_type = "CREDIT"
                             
                             record = {
                                 "sender_account": sender,
                                 "receiver_account": receiver,
                                 "amount": amount,
-                                "currency": "USD",
+                                "currency": "INR",
                                 "timestamp": timestamp,
-                                "transaction_type": "TRANSFER",
-                                "payment_channel": "ACH",
+                                "transaction_type": txn_type,
+                                "payment_channel": "UPI" if "UPI" in counterparty else "TRANSFER",
                                 "ifsc": None,
                                 "bank_name": None,
                                 "branch": None,
@@ -231,9 +301,41 @@ def parse_pdf(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
                             valid.append(record)
                         except Exception as e:
                             invalid.append({"row": line_idx + 1, "data": line, "reason": str(e)})
-                            
-        if not valid and not invalid:
-            raise ValueError("No matching transaction logs could be extracted from PDF text or tables.")
+                    
+                    # Fallback for standard YYYY-MM-DD + two accounts
+                    elif date_match:
+                        amount_match = re.search(r"(\d+(?:\.\d{2})?)", line)
+                        accounts = re.findall(r"([a-zA-Z0-9-]{8,25})", line)
+                        accounts = [acc for acc in accounts if not re.match(r"^\d{4}-\d{2}-\d{2}$", acc) and not re.match(r"^\d+\.\d{2}$", acc)]
+                        
+                        if amount_match and len(accounts) >= 2:
+                            try:
+                                timestamp = pd.to_datetime(date_match.group(1)).to_pydatetime()
+                                amount = Decimal(amount_match.group(1))
+                                sender = accounts[0]
+                                receiver = accounts[1]
+                                
+                                record = {
+                                    "sender_account": sender,
+                                    "receiver_account": receiver,
+                                    "amount": amount,
+                                    "currency": "USD",
+                                    "timestamp": timestamp,
+                                    "transaction_type": "TRANSFER",
+                                    "payment_channel": "ACH",
+                                    "ifsc": None,
+                                    "bank_name": None,
+                                    "branch": None,
+                                    "beneficiary": receiver,
+                                    "purpose": "Text-parsed PDF line",
+                                    "transaction_id": None,
+                                }
+                                valid.append(record)
+                            except Exception as e:
+                                invalid.append({"row": line_idx + 1, "data": line, "reason": str(e)})
+
+            if not valid and not invalid:
+                raise ValueError("No matching transaction logs could be extracted from PDF text or tables.")
             
     except Exception as e:
         raise ValueError(f"PDF Parse Exception: {str(e)}")
@@ -254,6 +356,11 @@ async def upload_statement(
     
     # Read size check
     contents = await file.read()
+    
+    # DEBUG: Save uploaded file to inspect
+    with open("E:/MuleShieldAI/fixtures/last_uploaded.pdf", "wb") as f:
+        f.write(contents)
+        
     if len(contents) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -316,35 +423,64 @@ async def upload_statement(
     matched_ids = {m[0] for m in matches if m[0]}
     matched_fps = {m[1] for m in matches if m[1]}
     
-    # Save staged rows
+    # Save staged rows - use INSERT OR IGNORE to gracefully skip any constraint conflicts
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from sqlalchemy import inspect as sa_inspect
+
     staged_records = []
     duplicate_count = 0
+    seen_tx_ids = set()
+    seen_fingerprints = set()
     
     for row in valid_rows:
+        # Skip rows that are already confirmed duplicates from DB
         if (row["transaction_id"] and row["transaction_id"] in matched_ids) or (row["fingerprint"] in matched_fps):
             duplicate_count += 1
             continue
+        
+        # Skip fingerprints already seen in this batch
+        if row["fingerprint"] in seen_fingerprints:
+            duplicate_count += 1
+            continue
+        seen_fingerprints.add(row["fingerprint"])
             
-        db_tx = Transaction(
-            ingestion_id=ingestion_id,
-            transaction_id=row["transaction_id"],
-            sender_account=row["sender_account"],
-            receiver_account=row["receiver_account"],
-            amount=row["amount"],
-            currency=row["currency"],
-            timestamp=row["timestamp"],
-            transaction_type=row["transaction_type"],
-            payment_channel=row["payment_channel"],
-            ifsc=row["ifsc"],
-            bank_name=row["bank_name"],
-            branch=row["branch"],
-            beneficiary=row["beneficiary"],
-            purpose=row["purpose"],
-            status="STAGED",
-            fingerprint=row["fingerprint"]
-        )
-        db.add(db_tx)
-        staged_records.append(row)
+        # Scrub duplicate transaction_ids within the same batch to avoid UNIQUE constraint failures
+        if row["transaction_id"]:
+            if row["transaction_id"] in seen_tx_ids:
+                row["transaction_id"] = None
+            else:
+                seen_tx_ids.add(row["transaction_id"])
+        
+        tx_id = uuid.uuid4()
+        row_data = {
+            "id": tx_id,
+            "ingestion_id": str(ingestion_id),
+            "transaction_id": row["transaction_id"],
+            "sender_account": row["sender_account"],
+            "receiver_account": row["receiver_account"],
+            "amount": float(row["amount"]),
+            "currency": row["currency"],
+            "timestamp": row["timestamp"],
+            "transaction_type": row["transaction_type"],
+            "payment_channel": row["payment_channel"],
+            "ifsc": row.get("ifsc"),
+            "bank_name": row.get("bank_name"),
+            "branch": row.get("branch"),
+            "beneficiary": row.get("beneficiary"),
+            "purpose": row.get("purpose"),
+            "status": "STAGED",
+            "fingerprint": row["fingerprint"],
+        }
+        
+        try:
+            async with db.begin_nested():
+                tx = Transaction(**row_data)
+                db.add(tx)
+            staged_records.append(row)
+        except Exception as e:
+            logger.error("Failed to insert row", error=str(e), tx_id=str(tx_id))
+            duplicate_count += 1
+            continue
         
     await db.commit()
     

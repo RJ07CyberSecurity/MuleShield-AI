@@ -121,9 +121,15 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
 
       setTimeout(() => {
         if (response.success && response.data.ingestion_id) {
-          setIngestionResult(response.data);
-          setUploadStatus("preview");
-          addToast("Forensic Statement parsed and validated successfully.", "success");
+          if (response.data.valid_count === 0) {
+            setErrorMessage("All transactions in this statement have already been imported (duplicates skipped).");
+            setUploadStatus("error");
+            addToast("Duplicate Statement detected. No new transactions to stage.", "error");
+          } else {
+            setIngestionResult(response.data);
+            setUploadStatus("preview");
+            addToast("Forensic Statement parsed and validated successfully.", "success");
+          }
         } else {
           setErrorMessage(response.message || "Failed parsing bank statement logs.");
           setUploadStatus("error");

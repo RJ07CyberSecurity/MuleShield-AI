@@ -11,12 +11,12 @@ import {
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "mock-api-key-muleshield",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "muleshield-967045850546.firebaseapp.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "muleshield-967045850546",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "muleshield-967045850546.appspot.com",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "muleshield-ai-fe604.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "muleshield-ai-fe604",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "muleshield-ai-fe604.firebasestorage.app",
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "967045850546",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:967045850546:web:mockappid"
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:967045850546:web:aec30f0d84fcd9df27f0ab"
 };
 
 // Initialize Firebase App (Server-Side Safe Check)

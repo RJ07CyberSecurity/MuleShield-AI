@@ -133,9 +133,26 @@ async def get_graph(
     # Fetch customer names from shared DB
     customers_map = {}
     try:
-        cust_res = await session.execute(text("SELECT id, first_name, last_name, risk_score FROM customers"))
+        from shared.database.models import Customer, Account, RiskScore
+        from sqlalchemy import func
+        stmt = (
+            select(
+                Customer.id,
+                Customer.full_name,
+                func.coalesce(func.max(RiskScore.final_score) / 100.0, 0.0)
+            )
+            .outerjoin(Account, Customer.id == Account.customer_id)
+            .outerjoin(RiskScore, Account.id == RiskScore.account_id)
+            .group_by(Customer.id, Customer.full_name)
+        )
+        cust_res = await session.execute(stmt)
         for row in cust_res.all():
-            customers_map[row[0]] = (row[1], row[2], float(row[3]))
+            cust_id, full_name, r_score = row
+            parts = full_name.split(" ", 1) if full_name else []
+            first = parts[0] if len(parts) > 0 else ""
+            last = parts[1] if len(parts) > 1 else ""
+            customers_map[cust_id] = (first, last, float(r_score))
+            customers_map[str(cust_id)] = (first, last, float(r_score))
     except Exception:
         # Fallback if table doesn't exist/empty
         pass
