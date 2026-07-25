@@ -1,8 +1,12 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, Response, HTTPException, APIRouter
+from fastapi import FastAPI, Request, Response, HTTPException, APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import os
+import asyncio
+import time
+import random
+import json
 from dotenv import load_dotenv
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
@@ -649,6 +653,27 @@ REQUEST_COUNT = {}
 LATENCY_SUM = {}
 
 app.include_router(router, prefix="/api/v1")
+
+
+@app.websocket("/ws/live-events")
+async def live_events_websocket(websocket: WebSocket):
+    await websocket.accept()
+    logger.info("Live stream client connected")
+    try:
+        while True:
+            await asyncio.sleep(15)
+            new_activity = {
+                "id": int(time.time() * 1000),
+                "type": "ALERT",
+                "text": f"Incoming SWIFT flag: ACC-{random.randint(1000, 9999)}",
+                "time": "Just now",
+                "icon": "bolt",
+                "color": "text-risk-high"
+            }
+            await websocket.send_text(json.dumps(new_activity))
+    except WebSocketDisconnect:
+        logger.info("Live stream client disconnected")
+
 
 
 @app.get("/metrics")

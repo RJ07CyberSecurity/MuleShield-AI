@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import SentinelAIChat from "./SentinelAIChat";
 
 export default function SupportPage() {
   const [severity, setSeverity] = useState("HIGH");
+  const [isAIChatOpen, setIsAIChatOpen] = useState(false);
   const [tickets, setTickets] = useState([
     { id: "#MST-8821", subject: "API Latency on MuleNode-X Cluster", category: "Technical", severity: "HIGH", status: "OPEN", update: "22m ago" },
     { id: "#MST-8794", subject: "False Positive in Crypto-Mixer Detection", category: "Compliance", severity: "MED", status: "PENDING", update: "2h ago" },
@@ -255,14 +257,16 @@ export default function SupportPage() {
               Have a technical question about the MuleShield APIs or alert rules? Start a secure session.
             </p>
             <button
-              onClick={() => alert("Secure AI assistant chat initialized.")}
-              className="w-full py-2.5 bg-primary text-on-primary font-bold text-xs rounded-xl flex items-center justify-center gap-1.5"
+              onClick={() => setIsAIChatOpen(true)}
+              className="w-full py-2.5 bg-primary text-on-primary font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 hover:bg-primary-fixed transition-colors shadow-md"
             >
               Start AI Chat
             </button>
           </div>
         </div>
       </div>
+      
+      <SentinelAIChat isOpen={isAIChatOpen} onClose={() => setIsAIChatOpen(false)} />
     </div>
   );
 }

@@ -34,6 +34,36 @@ function mapBackendCase(c: any): Case {
     transactionsCount: 0,
     totalAmount: 0,
     notes: [],
+    
+    // Rich frontend simulations
+    customerName: c.customer_name || "Unknown Entity",
+    bank: c.bank || "MuleShield First National",
+    priority: c.priority === "CRITICAL" ? "CRITICAL" : c.priority === "HIGH" ? "HIGH" : c.riskScore >= 40 ? "MEDIUM" : "LOW",
+    aiConfidence: c.aiConfidence || Math.floor(Math.random() * (98 - 75 + 1) + 75),
+    slaRemaining: c.slaRemaining || `${Math.floor(Math.random() * 48)}h ${Math.floor(Math.random() * 60)}m`,
+    evidenceCount: c.evidenceCount || Math.floor(Math.random() * 10),
+    currentStage: c.currentStage || (c.status === "NEW" ? "Alert Triage" : "Network Analysis"),
+    
+    shapValues: c.shapValues || [
+      { feature: "Rapid Transit", value: 45.2, contribution: "positive" },
+      { feature: "Layering", value: 32.1, contribution: "positive" },
+      { feature: "Geo Risk", value: 18.5, contribution: "positive" },
+      { feature: "Account Age", value: -12.4, contribution: "negative" }
+    ],
+    triggeredRules: c.triggeredRules || ["R1_HIGH_TXN_FREQ", "R3_RAPID_PASS_THROUGH"],
+    
+    timeline: c.timeline || [
+      { id: "t1", stage: "Alert Generated", description: "System flagged anomalous behavior", timestamp: c.created_at, icon: "warning", isCompleted: true },
+      { id: "t2", stage: "Case Created", description: "Auto-escalated to case registry", timestamp: c.created_at, icon: "folder", isCompleted: true },
+      { id: "t3", stage: "Officer Assigned", description: "Assigned to an investigator", timestamp: new Date().toISOString(), icon: "person", isCompleted: c.assignee_id ? true : false },
+      { id: "t4", stage: "Evidence Added", description: "Bank statements collected", timestamp: "", icon: "attach_file", isCompleted: false },
+      { id: "t5", stage: "Network Analysed", description: "Graph analysis completed", timestamp: "", icon: "hub", isCompleted: false },
+      { id: "t6", stage: "Closed", description: "Investigation concluded", timestamp: "", icon: "check_circle", isCompleted: false }
+    ],
+    evidence: c.evidence || [],
+    linkedAlerts: c.linkedAlerts || [`ALT-${Math.floor(Math.random() * 9000) + 1000}`, `ALT-${Math.floor(Math.random() * 9000) + 1000}`],
+    linkedAccounts: c.linkedAccounts || [`ACCT-${Math.floor(Math.random() * 90000) + 10000}`],
+    investigatorNotes: c.investigatorNotes || "Initial triage suggests coordinated mule activity. Awaiting document verification."
   };
 }
 

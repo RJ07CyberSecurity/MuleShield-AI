@@ -20,30 +20,17 @@ import IngestionHistoryPanel from "../../components/dashboard/IngestionHistoryPa
 import { apiClient } from "../../services/api-client";
 
 export default function DashboardPage() {
-  const { addToast } = useUIStore();
+  const { addToast, globalIngestionId, setGlobalIngestionId } = useUIStore();
   const [timeRange, setTimeRange] = useState("24H");
   const [freezeExecuted, setFreezeExecuted] = useState(false);
   const [showUploader, setShowUploader] = useState(false);
-  const [activeIngestionId, setActiveIngestionId] = useState<string | null>(null);
-
-  // Read activeIngestionId on mount, save when it changes
-  useEffect(() => {
-    const saved = sessionStorage.getItem("activeIngestionId");
-    if (saved) {
-      setActiveIngestionId(saved);
-      setFilterIngestionId(saved);
-    }
-  }, []);
 
   const handleSetActiveIngestionId = (id: string | null) => {
-    setActiveIngestionId(id);
-    if (id) {
-      sessionStorage.setItem("activeIngestionId", id);
-    } else {
-      sessionStorage.removeItem("activeIngestionId");
-    }
+    setGlobalIngestionId(id);
   };
-  const [filterIngestionId, setFilterIngestionId] = useState<string | null>(null);
+  const [filterIngestionId, setFilterIngestionId] = useState<string | null>(globalIngestionId);
+  const [previewIngestionId, setPreviewIngestionId] = useState<string | null>(null);
+
   const [statsLoading, setStatsLoading] = useState(true);
   const [timelineData, setTimelineData] = useState<any[]>([]);
   const [liveTransactions, setLiveTransactions] = useState<any[]>([]);
@@ -87,11 +74,11 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    loadDashboard(activeIngestionId);
+    loadDashboard(filterIngestionId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIngestionId, timeRange]);
+  }, [filterIngestionId, timeRange]);
 
-  const isFiltered = !!activeIngestionId;
+  const isFiltered = !!filterIngestionId;
 
   const stats = [
     {
@@ -142,7 +129,7 @@ export default function DashboardPage() {
 
   const handleExecuteFreeze = () => {
     setFreezeExecuted(true);
-    addToast("DOWNSTREAM ACTION ENFORCED: Hold placed on assets of ACC-72948-X.", "error");
+    addToast("DOWNSTREAM ACTION ENFORCED: Hold placed on assets of ACC-72948-X.", "info");
     setTimeout(() => setFreezeExecuted(false), 3000);
   };
 
@@ -163,6 +150,7 @@ export default function DashboardPage() {
             <button
               onClick={() => {
                 setFilterIngestionId(null);
+                setPreviewIngestionId(null);
                 handleSetActiveIngestionId(null);
               }}
               className="px-4 py-2.5 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 rounded-xl text-xs font-semibold text-on-surface transition-colors"
@@ -180,22 +168,22 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Ingestion History Panel — always visible, auto-loads past statements */}
       <IngestionHistoryPanel
-        activeIngestionId={activeIngestionId}
+        activeIngestionId={previewIngestionId}
         onSelect={(id) => {
-          handleSetActiveIngestionId(id);
+          setPreviewIngestionId(id);
           setFilterIngestionId(id);
-          addToast("Statement selected. Loading ingestion summary...", "info");
+          handleSetActiveIngestionId(id);
         }}
       />
 
-      {/* Ingestion summary stats card — shows when a statement is selected */}
-      {activeIngestionId && (
+      {/* Ingestion summary stats card — shows when a statement is selected in history */}
+      {previewIngestionId && (
         <IngestionSummaryCard
-          ingestionId={activeIngestionId}
+          ingestionId={previewIngestionId}
           onViewFlagged={(id) => {
             setFilterIngestionId(id);
+            handleSetActiveIngestionId(id);
             addToast("Filtering dashboard tables to the current statement ingestion run.", "info");
             setTimeout(() => {
               document.getElementById("flagged-table-section")?.scrollIntoView({ behavior: "smooth" });
@@ -598,10 +586,10 @@ export default function DashboardPage() {
               <AccountDataUploader
                 onClose={() => setShowUploader(false)}
                 onSuccess={(ingestionId) => {
-                  setActiveIngestionId(ingestionId);
+                  handleSetActiveIngestionId(ingestionId);
                   setFilterIngestionId(ingestionId);
+                  setPreviewIngestionId(ingestionId);
                   setShowUploader(false);
-                  // loadDashboard is triggered automatically via useEffect([activeIngestionId])
                 }}
               />
             </motion.div>

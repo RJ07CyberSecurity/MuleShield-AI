@@ -409,7 +409,6 @@ async def list_flagged_accounts(
             Alert.account_id.in_(acct_ids),
             Alert.status != "CLOSED_FALSE_POSITIVE"
         )
-        alert_stmt = alert_stmt.where(Alert.owner_id == owner_id)
         alert_stmt = alert_stmt.order_by(RiskScore.final_score.desc())
     else:
         alert_stmt = select(Alert, Account, RiskScore).join(
@@ -435,14 +434,16 @@ async def list_flagged_accounts(
         final_score = int(risk_score.final_score) if risk_score else 0
         severity = risk_score.risk_band if risk_score else "LOW"
 
+        acct_num = account.account_number
+
         if risk_score and risk_score.explainability_payload:
             factors = risk_score.explainability_payload.get("factors", [])
         else:
             factors = [{"rule": "UNKNOWN", "reason": "No factors available", "weight": final_score}]
 
         # Only add/replace if this entry has a higher score than an already-seen one
-        if acct_id not in seen or final_score > seen[acct_id].risk_score:
-            seen[acct_id] = FlaggedAccountResponse(
+        if acct_num not in seen or final_score > seen[acct_num].risk_score:
+            seen[acct_num] = FlaggedAccountResponse(
                 account_id=acct_id,
                 account_number=account.account_number,
                 risk_score=final_score,
@@ -475,30 +476,41 @@ async def submit_feedback(
     """
     logger.info("Received model feedback", account_id=payload.account_id, is_true_positive=payload.is_true_positive)
     
-    # 1. Store the feedback
-    feedback = ModelFeedback(
-        account_id=payload.account_id,
-        is_true_positive=payload.is_true_positive,
-        notes=payload.notes
-    )
-    db.add(feedback)
-    
-    # 2. Update Alert status if it's a false positive
-    if not payload.is_true_positive:
-        stmt = select(Alert).where(Alert.account_id == payload.account_id, Alert.status != "CLOSED_FALSE_POSITIVE")
-        res = await db.execute(stmt)
-        alerts = res.scalars().all()
-        for alert in alerts:
-            alert.status = "CLOSED_FALSE_POSITIVE"
-            alert.updated_at = datetime.utcnow()
-            
-    await db.commit()
-    
-    # 3. (Placeholder) Trigger background job to retrain ML models 
-    
-    return ResponseEnvelope(
-        success=True,
-        message="Feedback successfully recorded for retraining.",
-        data={"account_id": payload.account_id, "is_true_positive": payload.is_true_positive},
-        request_id=request.state.request_id
-    )
+    import uuid
+    try:
+        # 1. Store the feedback
+        feedback = ModelFeedback(
+            account_id=uuid.UUID(payload.account_id),
+            is_true_positive=payload.is_true_positive,
+            notes=payload.notes
+        )
+        db.add(feedback)
+        
+        # 2. Update Alert status if it's a false positive
+        if not payload.is_true_positive:
+            stmt = select(Alert).where(Alert.account_id == payload.account_id, Alert.status != "CLOSED_FALSE_POSITIVE")
+            res = await db.execute(stmt)
+            alerts = res.scalars().all()
+            for alert in alerts:
+                alert.status = "CLOSED_FALSE_POSITIVE"
+                alert.updated_at = datetime.utcnow()
+                
+        await db.commit()
+        
+        # 3. (Placeholder) Trigger background job to retrain ML models 
+        
+        return ResponseEnvelope(
+            success=True,
+            message="Feedback successfully recorded for retraining.",
+            data={"account_id": payload.account_id, "is_true_positive": payload.is_true_positive},
+            request_id=request.state.request_id
+        )
+    except Exception as e:
+        logger.error(f"Error in submit_feedback: {str(e)}", exc_info=True)
+        await db.rollback()
+        return ResponseEnvelope(
+            success=False,
+            message=f"Internal server error: {str(e)}",
+            data=None,
+            request_id=request.state.request_id
+        )

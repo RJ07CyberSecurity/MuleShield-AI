@@ -14,6 +14,8 @@ interface UIState {
   toasts: Toast[];
   addToast: (message: string, type?: Toast["type"], duration?: number) => void;
   removeToast: (id: string) => void;
+  globalIngestionId: string | null;
+  setGlobalIngestionId: (id: string | null) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -36,5 +38,16 @@ export const useUIStore = create<UIState>((set) => ({
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
     })),
+  globalIngestionId: typeof window !== "undefined" ? sessionStorage.getItem("activeIngestionId") : null,
+  setGlobalIngestionId: (id) => {
+    if (typeof window !== "undefined") {
+      if (id) {
+        sessionStorage.setItem("activeIngestionId", id);
+      } else {
+        sessionStorage.removeItem("activeIngestionId");
+      }
+    }
+    set({ globalIngestionId: id });
+  },
 }));
 

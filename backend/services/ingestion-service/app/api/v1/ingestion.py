@@ -1022,20 +1022,14 @@ async def get_ingestion_summary(
     start_date = min(timestamps).isoformat() if timestamps else datetime.utcnow().isoformat()
     end_date = max(timestamps).isoformat() if timestamps else datetime.utcnow().isoformat()
     
-    # 2. Get alerts/flagged count linked to accounts involved in this ingestion run
-    # Query accounts in account-service/alerts
-    # In SQLite, we can join alerts table on account_id
-    # Get Account ids of accounts in this ingestion
-    acct_stmt = select(Account.id).where(Account.account_number.in_(list(unique_accts)))
-    acct_res = await db.execute(acct_stmt)
-    acct_ids = [row[0] for row in acct_res.all()]
-    
     flagged_count = 0
-    if acct_ids:
+    if unique_accts:
         try:
-            alert_stmt = select(func.count(func.distinct(Alert.account_id))).where(
-                Alert.account_id.in_(acct_ids),
-                Alert.status != "DISMISSED"
+            alert_stmt = select(func.count(func.distinct(Account.account_number))).select_from(Alert).join(
+                Account, Alert.account_id == Account.id
+            ).where(
+                Account.account_number.in_(list(unique_accts)),
+                Alert.status != "CLOSED_FALSE_POSITIVE"
             )
             alert_res = await db.execute(alert_stmt)
             flagged_count = alert_res.scalar() or 0

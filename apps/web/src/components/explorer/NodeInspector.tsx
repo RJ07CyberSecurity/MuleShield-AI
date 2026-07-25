@@ -196,7 +196,7 @@ export default function NodeInspector() {
               <div className="flex items-center gap-1.5">
                 <span className={`material-symbols-outlined text-sm ${
                   hop.direction === "INFLOW" ? "text-risk-low" : "text-risk-high"
-                }`}>{hop.direction === "INFLOW" ? "download" : "upload"}</span>
+                }`}>{hop.direction === "INFLOW" ? "arrow_downward" : "arrow_upward"}</span>
                 <div>
                   <span className="font-semibold text-on-surface">{hop.direction}</span>
                   <p className="text-[9px] font-label-mono text-on-surface-variant leading-none">{hop.id}</p>
