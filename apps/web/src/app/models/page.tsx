@@ -1,52 +1,88 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from "recharts";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUIStore } from "../../store/useUIStore";
-
-// ROC/PR curves mock coordinates
-const rocData = [
-  { fpr: 0.0, tpr: 0.0 },
-  { fpr: 0.1, tpr: 0.5 },
-  { fpr: 0.2, tpr: 0.8 },
-  { fpr: 0.4, tpr: 0.92 },
-  { fpr: 0.6, tpr: 0.96 },
-  { fpr: 0.8, tpr: 0.98 },
-  { fpr: 1.0, tpr: 1.0 },
-];
-
-const championChallengerData = [
-  { name: "0.0", champion: 0.0, challenger: 0.0 },
-  { name: "0.2", champion: 0.62, challenger: 0.78 },
-  { name: "0.4", champion: 0.84, challenger: 0.91 },
-  { name: "0.6", champion: 0.92, challenger: 0.96 },
-  { name: "0.8", champion: 0.96, challenger: 0.98 },
-  { name: "1.0", champion: 1.0, challenger: 1.0 },
-];
-
-const driftData = [
-  { name: "Low Vel", training: 45, serving: 12 },
-  { name: "Med Vel", training: 60, serving: 32 },
-  { name: "High Vel", training: 80, serving: 54 },
-  { name: "Max Vel", training: 30, serving: 75 },
-];
+import { apiClient } from "../../services/api-client";
 
 export default function ModelsPage() {
   const { addToast } = useUIStore();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"inventory" | "differential">("inventory");
   const [canaryTraffic, setCanaryTraffic] = useState(5);
   const [deployMode, setDeployMode] = useState("shadow");
+  const [activeIngestionId, setActiveIngestionId] = useState<string | null>(null);
+  const pathname = usePathname();
 
-  const shapFeatures = [
-    { name: "TRANS_FREQ", value: 85, pts: "+0.24" },
-    { name: "VELOCITY_DELTA", value: 65, pts: "+0.18" },
-    { name: "SENDER_AGE_RISK", value: 45, pts: "+0.12" },
-    { name: "GEOLOC_ENTROPY", value: 30, pts: "+0.09" },
-  ];
+  useEffect(() => {
+    const savedId = sessionStorage.getItem("activeIngestionId");
+    if (savedId) {
+      setActiveIngestionId(savedId);
+    }
+  }, [pathname]);
+
+  const { data: metrics, isLoading: loadingMetrics } = useQuery({
+    queryKey: ["models", "metrics", activeIngestionId],
+    queryFn: () => apiClient.get<any>(`/api/v1/models/metrics${activeIngestionId ? `?ingestion_id=${activeIngestionId}` : ""}`),
+  });
+
+  const { data: inventory, isLoading: loadingInventory } = useQuery({
+    queryKey: ["models", "inventory"],
+    queryFn: () => apiClient.get<any>(`/api/v1/models/inventory`),
+  });
+
+  const deployMutation = useMutation({
+    mutationFn: (data: any) => apiClient.post("/api/v1/models/deploy", data),
+    onSuccess: (_, variables) => {
+      const mode = variables.mode;
+      if (mode === "canary") {
+        addToast(`Deploying challenger model: Canary rollout set at ${variables.canary_traffic}% traffic.`, "success");
+      } else {
+        addToast(`Deploying challenger model in ${mode.toUpperCase()} mode.`, "success");
+      }
+    },
+    onError: () => {
+      addToast("Failed to initiate deployment.", "error");
+    },
+  });
+
+  const constraintsMutation = useMutation({
+    mutationFn: (data: any) => apiClient.post("/api/v1/models/constraints", data),
+    onSuccess: () => {
+      addToast("Model constraints configuration successfully archived.", "success");
+    },
+    onError: () => {
+      addToast("Failed to update constraints.", "error");
+    },
+  });
 
   const handleRollout = () => {
-    addToast(`Deploying challenger model: Canary rollout set at ${canaryTraffic}% traffic.`, "success");
+    deployMutation.mutate({
+      model_key: "MS-GBDT-V3.8",
+      mode: deployMode,
+      canary_traffic: canaryTraffic,
+    });
   };
+
+  const handleConstraints = () => {
+    constraintsMutation.mutate({ config_data: {} });
+  };
+
+  const isLoading = loadingMetrics || loadingInventory;
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-on-surface-variant animate-pulse">Loading model assets...</div>;
+  }
+
+  const rocData = metrics?.rocData || [];
+  const championChallengerData = metrics?.championChallengerData || [];
+  const driftData = metrics?.driftData || [];
+  const shapFeatures = metrics?.shapFeatures || [];
+  const classifiers = inventory?.classifiers || [];
+  const psi = metrics?.psi || 0.082;
+  const isStable = psi < 0.1;
 
   return (
     <div className="space-y-6">
@@ -74,8 +110,9 @@ export default function ModelsPage() {
         {/* Global model Actions */}
         <div className="flex gap-3">
           <button
-            onClick={() => addToast("Model constraints configuration successfully archived.", "success")}
-            className="px-4 py-2 border border-outline-variant/30 hover:border-primary/50 text-xs font-bold text-on-surface rounded-xl hover:bg-white/5 transition-all"
+            onClick={handleConstraints}
+            disabled={constraintsMutation.isPending}
+            className="px-4 py-2 border border-outline-variant/30 hover:border-primary/50 text-xs font-bold text-on-surface rounded-xl hover:bg-white/5 transition-all disabled:opacity-50"
           >
             Global Constraints
           </button>
@@ -105,7 +142,7 @@ export default function ModelsPage() {
             <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-4">
               <div className="flex justify-between items-baseline">
                 <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">ROC Curve</h4>
-                <span className="font-label-mono text-[9px] text-risk-low font-bold">AUC: 0.984</span>
+                <span className="font-label-mono text-[9px] text-risk-low font-bold">AUC: {metrics?.auc || 0.984}</span>
               </div>
               <div className="h-44 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -135,7 +172,7 @@ export default function ModelsPage() {
             <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-4">
               <div className="flex justify-between items-baseline">
                 <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">PR Curve</h4>
-                <span className="font-label-mono text-[9px] text-risk-low font-bold">mAP: 0.941</span>
+                <span className="font-label-mono text-[9px] text-risk-low font-bold">mAP: {metrics?.map || 0.941}</span>
               </div>
               <div className="h-44 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -165,7 +202,7 @@ export default function ModelsPage() {
             <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-4">
               <h4 className="font-bold text-xs text-on-surface uppercase tracking-wider">SHAP Feature Importance</h4>
               <div className="space-y-4 text-xs pt-2">
-                {shapFeatures.map((feat) => (
+                {shapFeatures.map((feat: any) => (
                   <div key={feat.name} className="space-y-1.5">
                     <div className="flex justify-between font-label-mono text-[9px] text-on-surface-variant font-semibold">
                       <span>{feat.name}</span>
@@ -199,26 +236,22 @@ export default function ModelsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/10 text-xs">
-                  <tr className="hover:bg-surface-container-high/20 transition-colors">
-                    <td className="px-4 py-4 font-bold text-primary font-label-mono truncate">MS-GCN-V4.1</td>
-                    <td className="px-4 py-4 font-semibold text-on-surface truncate">Graph Convolutional Network (PyTorch)</td>
-                    <td className="px-4 py-4 text-center font-label-mono text-on-surface">0.962</td>
-                    <td className="px-4 py-4 text-center font-label-mono text-on-surface">94.1%</td>
-                    <td className="px-4 py-4 font-label-mono text-on-surface-variant truncate">2026-06-11</td>
-                    <td className="px-4 py-4 text-right">
-                      <span className="px-2 py-0.5 rounded bg-risk-low/15 border border-risk-low/20 text-risk-low font-bold">ACTIVE</span>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-surface-container-high/20 transition-colors">
-                    <td className="px-4 py-4 font-bold text-primary font-label-mono truncate">MS-GBDT-V3.8</td>
-                    <td className="px-4 py-4 font-semibold text-on-surface truncate">Gradient Boosted Decision Trees (XGBoost)</td>
-                    <td className="px-4 py-4 text-center font-label-mono text-on-surface">0.924</td>
-                    <td className="px-4 py-4 text-center font-label-mono text-on-surface">88.5%</td>
-                    <td className="px-4 py-4 font-label-mono text-on-surface-variant truncate">2025-12-04</td>
-                    <td className="px-4 py-4 text-right">
-                      <span className="px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant/20 font-bold">SHADOW</span>
-                    </td>
-                  </tr>
+                  {classifiers.map((model: any) => (
+                    <tr key={model.key} className="hover:bg-surface-container-high/20 transition-colors">
+                      <td className="px-4 py-4 font-bold text-primary font-label-mono truncate">{model.key}</td>
+                      <td className="px-4 py-4 font-semibold text-on-surface truncate">{model.architecture}</td>
+                      <td className="px-4 py-4 text-center font-label-mono text-on-surface">{model.f1_score}</td>
+                      <td className="px-4 py-4 text-center font-label-mono text-on-surface">{model.recall}</td>
+                      <td className="px-4 py-4 font-label-mono text-on-surface-variant truncate">{model.release_date}</td>
+                      <td className="px-4 py-4 text-right">
+                        {model.status === "ACTIVE" ? (
+                          <span className="px-2 py-0.5 rounded bg-risk-low/15 border border-risk-low/20 text-risk-low font-bold">ACTIVE</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded bg-surface-container-highest text-on-surface-variant border border-outline-variant/20 font-bold">SHADOW</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -293,7 +326,7 @@ export default function ModelsPage() {
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-[10px] font-label-mono uppercase tracking-wider text-on-surface-variant">
                     <span>Canary Traffic Allocation</span>
-                    <span className="font-bold text-primary">{canaryTraffic}% Traffic</span>
+                    <span className="font-bold text-primary">{deployMode === "canary" ? `${canaryTraffic}% Traffic` : "N/A"}</span>
                   </div>
                   <input
                     type="range"
@@ -301,16 +334,18 @@ export default function ModelsPage() {
                     max="100"
                     value={canaryTraffic}
                     onChange={(e) => setCanaryTraffic(Number(e.target.value))}
-                    className="w-full h-1 bg-surface-container-high rounded-full appearance-none cursor-pointer accent-primary"
+                    disabled={deployMode !== "canary"}
+                    className={`w-full h-1 bg-surface-container-high rounded-full appearance-none cursor-pointer ${deployMode === "canary" ? "accent-primary" : "accent-outline-variant/30 opacity-50"}`}
                   />
                 </div>
 
                 <button
                   onClick={handleRollout}
-                  className="w-full py-3 bg-primary text-on-primary font-bold rounded-xl text-body-sm hover:opacity-90 transition-all flex items-center justify-center gap-1.5 shadow-md"
+                  disabled={deployMutation.isPending}
+                  className="w-full py-3 bg-primary text-on-primary font-bold rounded-xl text-body-sm hover:opacity-90 transition-all flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-sm">rocket_launch</span>
-                  Initiate Rollout
+                  {deployMutation.isPending ? "Deploying..." : "Initiate Rollout"}
                 </button>
               </div>
             </div>
@@ -356,13 +391,17 @@ export default function ModelsPage() {
                     <p className="text-[10px] text-on-surface-variant mt-0.5">Calculated in last 1hr batch</p>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl font-black text-risk-low font-display-kpi">0.082</div>
-                    <span className="text-[8px] font-semibold text-risk-low uppercase tracking-widest font-label-mono">Stable</span>
+                    <div className={`text-2xl font-black font-display-kpi ${isStable ? "text-risk-low" : "text-risk-high"}`}>
+                      {psi.toFixed(3)}
+                    </div>
+                    <span className={`text-[8px] font-semibold uppercase tracking-widest font-label-mono ${isStable ? "text-risk-low" : "text-risk-high"}`}>
+                      {isStable ? "Stable" : "Unstable"}
+                    </span>
                   </div>
                 </div>
 
                 <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                  Feature drift is within acceptable boundaries (PSI &lt; 0.1). Model inputs match the distribution seen during training.
+                  Feature drift is {isStable ? "within acceptable boundaries (PSI < 0.1). Model inputs match the distribution seen during training." : "exceeding acceptable boundaries (PSI >= 0.1). Investigation required."}
                 </p>
               </div>
             </div>

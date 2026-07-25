@@ -38,45 +38,57 @@ export default function NetworkGraphCanvas() {
   };
 
   useEffect(() => {
-    // Generate circular positions for the nodes
-    const radius = 220;
-    const centerX = 350;
-    const centerY = 250;
+    // Guard: skip mapping if there are no nodes
+    if (storeNodes.length === 0) {
+      setRfNodes([]);
+      setRfEdges([]);
+      return;
+    }
+
+    // Adjust radius and center based on number of nodes
+    const nodeCount = storeNodes.length;
+    const radius = nodeCount > 15 ? 420 : 220;
+    const centerX = 450;
+    const centerY = 350;
+
+    // Find center subject node (highest risk score or matching a keyword)
+    const sortedByRisk = [...storeNodes].sort((a, b) => b.riskScore - a.riskScore);
+    const centerNodeId = sortedByRisk[0].id;
 
     const mappedNodes: Node[] = storeNodes.map((node, idx) => {
-      const isCenter = node.id === "ACC-9912-MULE-B";
-      const angle = (idx * 2 * Math.PI) / (storeNodes.length - 1);
+      const isCenter = node.id === centerNodeId;
+      // Avoid division-by-zero when nodeCount === 1
+      const divisor = Math.max(nodeCount - (isCenter ? 1 : 0), 1);
+      const angle = (idx * 2 * Math.PI) / divisor;
       const x = isCenter ? centerX : centerX + radius * Math.cos(angle);
       const y = isCenter ? centerY : centerY + radius * Math.sin(angle);
 
       const riskClass = getRiskColorClass(node.riskScore);
       const isSelected = selectedNodeId === node.id;
 
-      // Determine border color based on risk score
       let riskBorder = "border-outline-variant/35";
       if (node.riskScore >= 90) riskBorder = "border-risk-critical";
       else if (node.riskScore >= 70) riskBorder = "border-risk-high";
       else if (node.riskScore >= 40) riskBorder = "border-risk-medium";
 
-      // Timeline visibility filtering mock: make outer nodes disappear sequentially based on playbackTime
+      // Use opacity for timeline playback instead of 'hidden' to avoid ReactFlow's notify() crash
       const isVisible = isCenter || (idx % 10) < playbackTime;
 
       return {
         id: node.id,
         position: { x, y },
-        hidden: !isVisible,
         data: {
           label: (
             <div
-              className={`p-3 rounded-xl border text-left transition-all duration-200 shadow-xl ${
+              className={`p-2 rounded-xl border text-left transition-all duration-200 shadow-xl ${
                 isSelected
                   ? "ring-2 ring-primary border-primary scale-105"
                   : riskBorder
               } bg-surface-container-high hover:border-primary/50`}
-              style={{ minWidth: "150px" }}
+              style={{ minWidth: "120px", maxWidth: "150px", opacity: isVisible ? 1 : 0, pointerEvents: isVisible ? "auto" : "none" }}
             >
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <span className="material-symbols-outlined text-xs text-on-surface-variant">
+              <div className="flex items-center gap-1 mb-1">
+                <span className="material-symbols-outlined text-[10px] text-on-surface-variant">
                   {node.type === "account"
                     ? "account_balance_wallet"
                     : node.type === "device"
@@ -85,14 +97,14 @@ export default function NetworkGraphCanvas() {
                     ? "dns"
                     : "account_balance"}
                 </span>
-                <span className="text-[9px] font-label-mono text-on-surface-variant uppercase tracking-wider">
+                <span className="text-[8px] font-label-mono text-on-surface-variant uppercase tracking-wider">
                   {node.type}
                 </span>
               </div>
-              <div className="font-bold text-xs text-on-surface truncate leading-normal">{node.label}</div>
-              <div className="flex justify-between items-center mt-2.5 pt-1.5 border-t border-outline-variant/15">
-                <span className="text-[8px] text-on-surface-variant font-label-mono uppercase tracking-wider">Risk Index</span>
-                <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${riskClass}`}>
+              <div className="font-bold text-[10px] text-on-surface truncate leading-normal">{node.label}</div>
+              <div className="flex justify-between items-center mt-1.5 pt-1 border-t border-outline-variant/15">
+                <span className="text-[7px] text-on-surface-variant font-label-mono uppercase tracking-wider">Risk</span>
+                <span className={`text-[8px] font-bold px-1 py-0.1 rounded-full border ${riskClass}`}>
                   {node.riskScore}
                 </span>
               </div>
@@ -109,14 +121,14 @@ export default function NetworkGraphCanvas() {
 
     const mappedEdges: Edge[] = storeEdges.map((edge) => {
       const hasValue = edge.value !== undefined;
-      const isMuleEdge = edge.source.includes("MULE") || edge.target.includes("MULE");
+      const isMuleEdge = edge.source.includes("MULE") || edge.target.includes("MULE") || edge.id.includes("exp");
 
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
         label: edge.label,
-        animated: isMuleEdge,
+        animated: isMuleEdge || hasValue,
         style: {
           stroke: isMuleEdge ? "#F97316" : "#2563eb",
           strokeWidth: hasValue ? 2.5 : 1.5,
@@ -185,7 +197,11 @@ export default function NetworkGraphCanvas() {
           nodes={rfNodes}
           edges={rfEdges}
           onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-          onPaneClick={() => setSelectedNodeId(null)}
+          onEdgeClick={(_, edge) => useGraphStore.getState().setSelectedEdgeId(edge.id)}
+          onPaneClick={() => {
+            setSelectedNodeId(null);
+            useGraphStore.getState().setSelectedEdgeId(null);
+          }}
           fitView
         >
           <Background color="rgba(67, 70, 85, 0.15)" gap={16} />

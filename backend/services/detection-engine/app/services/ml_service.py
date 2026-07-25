@@ -56,7 +56,8 @@ class MLRiskModelService:
             "avg_balance_7d", "avg_holding_time_minutes", "unique_senders_30d",
             "unique_receivers_30d", "pct_night_txns", "device_change_count_7d",
             "new_device_flag", "location_change_flag", "kyc_mismatch_flag",
-            "income_to_txn_ratio", "days_since_account_open", "dormancy_then_spike_flag"
+            "income_to_txn_ratio", "days_since_account_open", "dormancy_then_spike_flag",
+            "structuring_flag", "rapid_fan_out_flag"
         ]
         
         # Prepare vector
@@ -112,6 +113,15 @@ class MLRiskModelService:
         # KYC mismatch
         if features.get("kyc_mismatch_flag", 0) == 1:
             score += 0.20
+        # Structuring
+        if features.get("structuring_flag", 0) == 1:
+            score += 0.30
+        # Rapid fan-out
+        if features.get("rapid_fan_out_flag", 0) == 1:
+            score += 0.30
+        # High receiver velocity
+        if features.get("unique_receivers_30d", 0) > 5:
+            score += 0.15
             
         return min(1.0, max(0.02, score))
 
@@ -130,10 +140,16 @@ class MLRiskModelService:
             contributors.append({"feature": "Device Token Conflict", "value": 18.5})
         if features.get("unique_senders_30d", 0) > 5:
             contributors.append({"feature": "Counterparty Velocity", "value": 15.0})
+        if features.get("unique_receivers_30d", 0) > 5:
+            contributors.append({"feature": "High Receiver Velocity", "value": 14.5})
         if features.get("location_change_flag", 0) == 1:
             contributors.append({"feature": "Location Change Drift", "value": 12.4})
         if features.get("kyc_mismatch_flag", 0) == 1:
             contributors.append({"feature": "KYC Profile Mismatch", "value": 21.0})
+        if features.get("structuring_flag", 0) == 1:
+            contributors.append({"feature": "Structuring / Smurfing", "value": 28.5})
+        if features.get("rapid_fan_out_flag", 0) == 1:
+            contributors.append({"feature": "Rapid Fan-Out", "value": 27.2})
             
         # Add base noise to keep total SHAP aligned
         if not contributors:

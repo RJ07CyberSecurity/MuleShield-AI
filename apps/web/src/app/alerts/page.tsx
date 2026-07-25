@@ -7,11 +7,16 @@ import { useUIStore } from "../../store/useUIStore";
 import { getRiskColorClass } from "../../types/alerts";
 
 export default function AlertsPage() {
-  const { alerts, selectedAlertId, setSelectedAlertId, resolveAlert } = useAlertStore();
+  const { alerts, selectedAlertId, setSelectedAlertId, resolveAlert, fetchAlerts } = useAlertStore();
   const { addToast } = useUIStore();
   
   const [activeTab, setActiveTab] = useState("History");
   const [riskRange, setRiskRange] = useState(50);
+
+  // Fetch real-time alerts from database on mount
+  useEffect(() => {
+    fetchAlerts();
+  }, [fetchAlerts]);
   
   // Custom filter states
   const [severityFilter, setSeverityFilter] = useState("ALL");
@@ -329,7 +334,13 @@ export default function AlertsPage() {
                     Triggered At
                   </div>
                   <div className="text-on-surface font-semibold font-label-mono truncate">
-                    {new Date(selectedAlert.timestamp).toLocaleString()}
+                    {(() => {
+                      const [mounted, setMounted] = useState(false);
+                      useEffect(() => {
+                        setMounted(true);
+                      }, []);
+                      return mounted ? new Date(selectedAlert.timestamp).toLocaleString() : selectedAlert.timestamp;
+                    })()}
                   </div>
                 </div>
               </div>

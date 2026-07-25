@@ -1,0 +1,4 @@
+full_name,email,pan_number,aadhaar_number,dob,mobile,kyc_status,account_open_date,occupation,annual_income,address,selfie_match_score,doc_verification_score
+John Doe,johndoe@example.com,ABCDE1234F,123456789012,1980-01-01,9876543210,VERIFIED,2023-01-15T10:00:00Z,Engineer,75000,123 Tech Park,0.95,0.98
+Jane Smith,janesmith@example.com,FGHIJ5678K,987654321098,1992-05-15,8765432109,PENDING,2024-02-20T11:30:00Z,Artist,45000,456 Art Studio,0.85,0.70
+Alice Brown,alicebrown@example.com,KLMNO9012P,112233445566,1975-11-20,7654321098,FAILED,2022-08-10T09:15:00Z,Doctor,120000,789 Health Clinic,0.45,0.50

@@ -80,6 +80,10 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     
+    # Password History (comma separated hashes)
+    password_history: Mapped[str | None] = mapped_column(String(500), nullable=True, default="")
+
+    
     # MFA Settings
     is_mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mfa_secret: Mapped[str | None] = mapped_column(String(100), nullable=True)

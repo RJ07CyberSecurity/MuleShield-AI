@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, Numeric, DateTime, Float, ForeignKey, Text, JSON, Date
+from sqlalchemy import String, Numeric, DateTime, Float, ForeignKey, Text, JSON, Date, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from shared.database.postgres import Base
 
@@ -62,22 +62,27 @@ class Account(Base):
     __table_args__ = {'extend_existing': True}
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
     customer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("customers.id", ondelete="SET NULL"), nullable=True, index=True)
-    account_number: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    account_number: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     ifsc: Mapped[str] = mapped_column(String(50), nullable=False)
     bank_name: Mapped[str] = mapped_column(String(100), nullable=False)
     branch: Mapped[str] = mapped_column(String(100), nullable=False)
     account_type: Mapped[str] = mapped_column(String(50), default="CHECKING", nullable=False)  # CHECKING, SAVINGS
+    currency: Mapped[str] = mapped_column(String(10), default="INR", nullable=False)
     balance: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=2), default=0.00, nullable=False)
     daily_limit: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=2), default=50000.00, nullable=False)
     monthly_limit: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=2), default=1500000.00, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="ACTIVE", nullable=False)  # ACTIVE, SUSPENDED, FROZEN
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     customer: Mapped["Customer | None"] = relationship(back_populates="accounts")
     alerts: Mapped[list["Alert"]] = relationship(back_populates="account", cascade="all, delete-orphan")
     risk_scores: Mapped[list["RiskScore"]] = relationship(back_populates="account", cascade="all, delete-orphan")
     external_intel: Mapped[list["ExternalIntel"]] = relationship(back_populates="account", cascade="all, delete-orphan")
+    model_feedback: Mapped[list["ModelFeedback"]] = relationship(back_populates="account", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Account(number={self.account_number}, balance={self.balance}, status={self.status})>"
@@ -91,6 +96,7 @@ class Transaction(Base):
     __table_args__ = {'extend_existing': True}
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
     ingestion_id: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
     transaction_id: Mapped[str | None] = mapped_column(String(100), unique=True, index=True, nullable=True)
     sender_account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
@@ -172,6 +178,7 @@ class RiskScore(Base):
     __table_args__ = {'extend_existing': True}
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     rule_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     ml_probability: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
@@ -197,11 +204,18 @@ class Alert(Base):
     __table_args__ = {'extend_existing': True}
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
-    risk_score_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("risk_scores.id", ondelete="SET NULL"), nullable=True)
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
+    alert_type: Mapped[str] = mapped_column(String(100), default="SUSPICIOUS_ACTIVITY", nullable=False)
+    severity: Mapped[str] = mapped_column(String(50), default="MEDIUM", nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="OPEN", nullable=False)  # OPEN, ASSIGNED, INVESTIGATING, CLOSED_FALSE_POSITIVE, ESCALATED
+    score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    trigger_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_officer_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    risk_score_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("risk_scores.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
@@ -221,6 +235,7 @@ class Case(Base):
     __table_args__ = {'extend_existing': True}
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
     alert_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("alerts.id", ondelete="SET NULL"), nullable=True, index=True)
     officer_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -254,3 +269,24 @@ class AuditLog(Base):
 
     def __repr__(self) -> str:
         return f"<AuditLog(actor={self.actor_id}, action={self.action}, timestamp={self.timestamp})>"
+
+
+class ModelFeedback(Base):
+    """
+    User annotations confirming whether a flagged account is a true positive or false positive.
+    Used for human-in-the-loop retraining.
+    """
+    __tablename__ = "model_feedback"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    is_true_positive: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    account: Mapped["Account"] = relationship(back_populates="model_feedback")
+
+    def __repr__(self) -> str:
+        return f"<ModelFeedback(account={self.account_id}, TP={self.is_true_positive})>"

@@ -2,9 +2,12 @@
 
 import { useState, useRef, DragEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, FileText, CheckCircle2, AlertOctagon, RefreshCw, Eye } from "lucide-react";
+import { Upload, X, FileText, CheckCircle2, AlertOctagon, RefreshCw, Eye, ShieldCheck } from "lucide-react";
 import { apiClient } from "../../services/api-client";
 import { useUIStore } from "../../store/useUIStore";
+import { useAlertStore } from "../../store/useAlertStore";
+import { useCaseStore } from "../../store/useCaseStore";
+import { useAuthStore } from "../../store/useAuthStore";
 
 interface PreviewRow {
   sender_account: string;
@@ -38,9 +41,11 @@ interface AccountDataUploaderProps {
 
 export default function AccountDataUploader({ onClose, onSuccess }: AccountDataUploaderProps) {
   const { addToast } = useUIStore();
+  const { user } = useAuthStore();
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "parsing" | "validating" | "preview" | "error">("idle");
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "parsing" | "validating" | "preview" | "duplicate" | "error">("idle");
+  const [duplicateCount, setDuplicateCount] = useState(0);
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [ingestionResult, setIngestionResult] = useState<IngestionData | null>(null);
@@ -60,9 +65,10 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
 
   const validateAndSetFile = (selectedFile: File) => {
     const isCsv = selectedFile.name.endsWith(".csv");
+    const isXlsx = selectedFile.name.endsWith(".xlsx");
     const isPdf = selectedFile.name.endsWith(".pdf");
-    if (!isCsv && !isPdf) {
-      addToast("Invalid file type. Only bank statements in CSV and PDF formats are accepted.", "error");
+    if (!isCsv && !isXlsx && !isPdf) {
+      addToast("Invalid file type. Only bank statements in CSV, XLSX, and PDF formats are accepted.", "error");
       return;
     }
     if (selectedFile.size > MAX_FILE_SIZE) {
@@ -109,6 +115,9 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
     try {
       const formData = new FormData();
       formData.append("file", file);
+      if (user) {
+        formData.append("uploader_id", user.id);
+      }
       
       setProgress(90);
       setUploadStatus("parsing");
@@ -122,9 +131,10 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
       setTimeout(() => {
         if (response.success && response.data.ingestion_id) {
           if (response.data.valid_count === 0) {
-            setErrorMessage("All transactions in this statement have already been imported (duplicates skipped).");
-            setUploadStatus("error");
-            addToast("Duplicate Statement detected. No new transactions to stage.", "error");
+            // All rows already exist in DB — show informative duplicate screen
+            setDuplicateCount(response.data.invalid_count ?? 0);
+            setUploadStatus("duplicate");
+            addToast("Statement already ingested — all transactions exist in the system.", "info");
           } else {
             setIngestionResult(response.data);
             setUploadStatus("preview");
@@ -151,10 +161,13 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
     try {
       const response = await apiClient.post<any>(
         `/api/v1/ingestion/${ingestionResult.ingestion_id}/confirm`,
-        {}
+        undefined
       );
       if (response.success) {
         addToast("Statement confirmed! Detection scorer pipeline executed.", "success");
+        // Refetch global state so alerts and cases pages update directly
+        useAlertStore.getState().fetchAlerts();
+        useCaseStore.getState().fetchCases();
         onSuccess(ingestionResult.ingestion_id);
       } else {
         addToast(response.message || "Confirmation failed.", "error");
@@ -181,7 +194,7 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
           Ingest Transaction Statement
         </h2>
         <p className="text-xs text-on-surface-variant mt-1.5">
-          Accepts standard bank ledger tables in CSV or PDF statements. Max file limit is 25MB.
+          Accepts standard bank ledger tables in CSV, XLSX, or PDF statements. Max file limit is 25MB.
         </p>
       </div>
 
@@ -209,7 +222,7 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
                 ref={fileInputRef}
                 type="file"
                 className="hidden"
-                accept=".csv,.pdf"
+                accept=".csv,.xlsx,.pdf"
                 onChange={handleChange}
               />
               <div className="w-16 h-16 rounded-full bg-surface-container-highest border border-outline-variant/30 flex items-center justify-center text-primary shadow-inner">
@@ -220,7 +233,7 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
                   Drag and drop statement file here, or click to browse
                 </p>
                 <p className="text-[10px] font-label-mono text-on-surface-variant">
-                  SUPPORTED TYPES: CSV, PDF | LIMIT: 25MB
+                  SUPPORTED TYPES: CSV, XLSX, PDF | LIMIT: 25MB
                 </p>
               </div>
             </div>
@@ -383,6 +396,58 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
                 className="px-6 py-2.5 bg-primary hover:bg-primary-fixed text-on-primary text-xs font-black rounded-xl shadow-lg hover:shadow-primary/10 hover:scale-102 transition-all flex items-center gap-2"
               >
                 Confirm & Import Statement
+                <CheckCircle2 size={14} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {uploadStatus === "duplicate" && (
+          <motion.div
+            key="duplicate"
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="p-10 flex flex-col items-center justify-center gap-6"
+          >
+            <div className="w-16 h-16 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-primary shadow-lg">
+              <ShieldCheck size={32} />
+            </div>
+
+            <div className="space-y-2 text-center max-w-md">
+              <h4 className="text-sm font-black text-on-surface">Statement Already Ingested</h4>
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                All <span className="font-bold text-primary">{duplicateCount.toLocaleString()}</span> transaction
+                {duplicateCount !== 1 ? "s" : ""} in this file already exist in the system.
+                No new records were staged — your data is safe and up to date.
+              </p>
+            </div>
+
+            {/* Info box */}
+            <div className="w-full max-w-md p-4 rounded-xl border border-outline-variant/30 bg-surface-container-highest flex gap-3 text-left">
+              <ShieldCheck size={16} className="text-primary flex-shrink-0 mt-0.5" />
+              <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                To view this statement's history and flagged accounts, close this dialog and select it from the
+                <span className="font-bold text-primary mx-1">Statement Ingestion History</span>panel on the dashboard.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setFile(null);
+                  setUploadStatus("idle");
+                  setIngestionResult(null);
+                }}
+                className="px-5 py-2.5 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 rounded-xl text-xs font-bold text-on-surface transition-colors"
+              >
+                Try Another File
+              </button>
+              <button
+                onClick={onClose}
+                className="px-6 py-2.5 bg-primary hover:bg-primary-fixed text-on-primary text-xs font-bold rounded-xl shadow-lg transition-all flex items-center gap-2"
+              >
+                View History
                 <CheckCircle2 size={14} />
               </button>
             </div>

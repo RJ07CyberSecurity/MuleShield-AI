@@ -8,7 +8,12 @@ from app.schemas.auth import (
     RefreshTokenRequest,
     MFAVerifyRequest,
     MFASetupResponse,
-    FirebaseLoginRequest
+    FirebaseLoginRequest,
+    PhoneOtpSendRequest,
+    PhoneOtpSendResponse,
+    PhoneOtpVerifyRequest,
+    ForgotPasswordLinkRequest,
+    PasswordResetVerifyRequest,
 )
 from app.dependencies.auth import get_auth_service, get_current_user, oauth2_scheme
 from app.services.auth_service import AuthService
@@ -162,6 +167,47 @@ async def firebase_login(
     )
 
 
+@router.post("/phone/send-otp", response_model=ResponseEnvelope[PhoneOtpSendResponse])
+async def send_phone_otp(
+    request: Request,
+    payload: PhoneOtpSendRequest,
+    service: AuthService = Depends(get_auth_service),
+) -> ResponseEnvelope[PhoneOtpSendResponse]:
+    """
+    Sends a phone OTP via the backend dev fallback when Firebase Phone Auth is unavailable.
+    """
+    otp_data = await service.send_phone_otp(payload.phone_number)
+    return ResponseEnvelope(
+        success=True,
+        message="Verification code sent.",
+        data=PhoneOtpSendResponse(**otp_data),
+        request_id=request.state.request_id,
+    )
+
+
+@router.post("/phone/verify-otp", response_model=ResponseEnvelope[TokenResponse])
+async def verify_phone_otp(
+    request: Request,
+    payload: PhoneOtpVerifyRequest,
+    service: AuthService = Depends(get_auth_service),
+) -> ResponseEnvelope[TokenResponse]:
+    """
+    Verifies a backend-issued phone OTP and returns application JWT tokens.
+    """
+    auth_result = await service.verify_phone_otp(
+        phone_number=payload.phone_number,
+        session_id=payload.session_id,
+        code=payload.code,
+    )
+    await service.repository.session.commit()
+    return ResponseEnvelope(
+        success=True,
+        message="Phone login successful.",
+        data=TokenResponse(**auth_result),
+        request_id=request.state.request_id,
+    )
+
+
 @router.post("/refresh", response_model=ResponseEnvelope[TokenResponse])
 async def refresh_tokens(
     request: Request,
@@ -213,5 +259,46 @@ async def get_me(
         success=True,
         message="User details retrieved.",
         data=UserResponse.model_validate(current_user),
+        request_id=request.state.request_id
+    )
+
+@router.post("/forgot-password/send-link", response_model=ResponseEnvelope[dict])
+async def forgot_password_send_link(
+    request: Request,
+    payload: ForgotPasswordLinkRequest,
+    service: AuthService = Depends(get_auth_service)
+) -> ResponseEnvelope[dict]:
+    """
+    Sends a password reset link to the specified email via SMTP.
+    """
+    result = await service.send_password_reset_link(payload.email)
+    
+    return ResponseEnvelope(
+        success=True,
+        message="If the email exists, a reset link has been sent.",
+        data=result,
+        request_id=request.state.request_id
+    )
+
+@router.post("/reset-password", response_model=ResponseEnvelope[dict])
+async def reset_password(
+    request: Request,
+    payload: PasswordResetVerifyRequest,
+    service: AuthService = Depends(get_auth_service)
+) -> ResponseEnvelope[dict]:
+    """
+    Verifies token and resets the user's password.
+    """
+    await service.reset_password_with_token(
+        email=payload.email,
+        token=payload.token,
+        new_password=payload.new_password
+    )
+    await service.repository.session.commit()
+    
+    return ResponseEnvelope(
+        success=True,
+        message="Password successfully reset. You may now log in.",
+        data={},
         request_id=request.state.request_id
     )

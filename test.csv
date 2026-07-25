@@ -1,0 +1,3 @@
+sender_account,receiver_account,amount,currency,timestamp,transaction_type,payment_channel
+acc1,acc2,100,USD,2026-07-22T10:00:00Z,TRANSFER,SWIFT
+acc3,acc4,200,USD,2026-07-22T10:05:00Z,TRANSFER,SWIFT

@@ -32,7 +32,7 @@ class AccountFreezeRequest(BaseModel):
 class AccountResponse(BaseModel):
     """Schema for returning account details."""
     id: uuid.UUID
-    customer_id: uuid.UUID
+    customer_id: uuid.UUID | None
     account_number: str
     type: str
     balance: Decimal
@@ -40,6 +40,24 @@ class AccountResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):
+        # Map account_type → type for backwards compatibility
+        if hasattr(obj, "account_type") and not hasattr(obj, "type"):
+            data = {
+                "id": obj.id,
+                "customer_id": obj.customer_id,
+                "account_number": obj.account_number,
+                "type": obj.account_type,
+                "balance": obj.balance,
+                "currency": getattr(obj, "currency", "USD"),
+                "status": obj.status,
+                "created_at": getattr(obj, "created_at", None) or __import__("datetime").datetime.utcnow(),
+                "updated_at": getattr(obj, "updated_at", None) or __import__("datetime").datetime.utcnow(),
+            }
+            return cls(**data)
+        return super().model_validate(obj, *args, **kwargs)
 
     class Config:
         from_attributes = True

@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.customer import Customer, KYCRecord
+from shared.database import Account
 
 class CustomerRepository:
     """
@@ -17,7 +18,10 @@ class CustomerRepository:
         """
         result = await self.session.execute(
             select(Customer)
-            .options(selectinload(Customer.kyc_records))
+            .options(
+                selectinload(Customer.kyc_records),
+                selectinload(Customer.accounts).selectinload(Account.risk_scores)
+            )
             .where(Customer.id == customer_id)
         )
         return result.scalars().first()
@@ -28,7 +32,10 @@ class CustomerRepository:
         """
         result = await self.session.execute(
             select(Customer)
-            .options(selectinload(Customer.kyc_records))
+            .options(
+                selectinload(Customer.kyc_records),
+                selectinload(Customer.accounts).selectinload(Account.risk_scores)
+            )
             .where(Customer.email == email)
         )
         return result.scalars().first()
@@ -63,9 +70,18 @@ class CustomerRepository:
         """
         Returns registered customers, optionally filtered by KYC state.
         """
-        stmt = select(Customer).options(selectinload(Customer.kyc_records))
+        from sqlalchemy.orm import selectinload
+        from shared.database import Account
+        stmt = (
+            select(Customer)
+            .options(
+                selectinload(Customer.kyc_records),
+                selectinload(Customer.accounts).selectinload(Account.risk_scores)
+            )
+        )
         if kyc_status:
             stmt = stmt.where(Customer.kyc_status == kyc_status.upper().strip())
             
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+

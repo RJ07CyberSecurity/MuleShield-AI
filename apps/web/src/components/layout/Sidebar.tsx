@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useUIStore } from "../../store/useUIStore";
+import { useAuthStore } from "../../store/useAuthStore";
 
 interface MenuItem {
   name: string;
@@ -19,6 +20,7 @@ interface MenuSection {
 export default function Sidebar() {
   const pathname = usePathname();
   const { sidebarCollapsed: isCollapsed, toggleSidebar } = useUIStore();
+  const { user } = useAuthStore();
   const [filterQuery, setFilterQuery] = useState("");
   const [recentPages, setRecentPages] = useState<MenuItem[]>([]);
 
@@ -48,7 +50,9 @@ export default function Sidebar() {
     {
       title: "System & Management",
       items: [
-        { name: "Admin Console", href: "/admin", icon: "admin_panel_settings" },
+        ...(user?.roles?.includes("administrator")
+          ? [{ name: "Admin Console", href: "/admin", icon: "admin_panel_settings" }]
+          : []),
         { name: "User Profile", href: "/profile", icon: "account_box" },
       ],
     },

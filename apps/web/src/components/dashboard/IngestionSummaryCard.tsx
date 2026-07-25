@@ -8,12 +8,12 @@ import { useUIStore } from "../../store/useUIStore";
 
 interface SummaryData {
   ingestion_id: string;
-  total_accounts: int;
-  total_transactions: int;
-  total_volume: float;
+  total_accounts: number;
+  total_transactions: number;
+  total_volume: number;
   start_date: string;
   end_date: string;
-  flagged_accounts_count: int;
+  flagged_accounts_count: number;
 }
 
 interface IngestionSummaryCardProps {
@@ -46,7 +46,8 @@ export default function IngestionSummaryCard({ ingestionId, onViewFlagged }: Ing
     if (ingestionId) {
       fetchSummary();
     }
-  }, [ingestionId, addToast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ingestionId]);
 
   if (loading) {
     return (

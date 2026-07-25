@@ -3,21 +3,41 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { apiClient } from "../../services/api-client";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [isSent, setIsSent] = useState(false);
+  const [devLink, setDevLink] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
 
-    setIsSent(true);
-    setTimeout(() => {
-      // Simulate receipt -> send user to set new password (Image 4)
-      router.push("/reset-password");
-    }, 1500);
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await apiClient.post<any>("/api/v1/auth/forgot-password/send-link", {
+        email: email
+      });
+      
+      if (!response.success) {
+        throw new Error(response.message || "Failed to send reset email.");
+      }
+
+      setIsSent(true);
+      if (response.data && response.data.dev_link) {
+        setDevLink(response.data.dev_link);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to request password reset.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -95,37 +115,76 @@ export default function ForgotPasswordPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Email input */}
-            <div className="space-y-2">
-              <label className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
-                Work Email Address
-              </label>
-              <div className="relative">
-                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">
-                  mail
-                </span>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@company.com"
-                  className="w-full bg-[#0c0e17] border border-outline-variant/30 rounded-xl px-4 py-3.5 pr-12 text-body-sm text-on-surface focus:outline-none focus:border-primary/50"
-                />
+          {isSent ? (
+            <div className="space-y-6">
+              <div className="p-6 bg-[#0c0e17] border border-primary/30 rounded-xl space-y-4 text-center">
+                <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                  <span className="material-symbols-outlined text-primary text-2xl">mark_email_read</span>
+                </div>
+                <h2 className="text-xl font-bold text-on-surface">Check your email</h2>
+                <p className="text-body-sm text-on-surface-variant">
+                  We have sent a secure password reset link to <br/>
+                  <span className="font-bold text-on-surface">{email}</span>.
+                </p>
+                <p className="text-xs text-on-surface-variant/60 italic pt-2">
+                  Link expires in 15 minutes. If you don't see it, check your spam folder.
+                </p>
               </div>
-            </div>
 
-            {/* Submit button */}
-            <button
-              type="submit"
-              disabled={isSent}
-              className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center justify-center gap-2"
-            >
-              {isSent ? "Sending Instructions..." : "Send Reset Link"}
-              <span className="material-symbols-outlined text-sm font-bold">arrow_forward</span>
-            </button>
-          </form>
+              {devLink && (
+                <div className="p-4 bg-[#1a2318] border border-[#71966a]/30 rounded-xl text-center space-y-3">
+                  <div className="text-[#84b07c] text-xs font-bold uppercase tracking-widest font-label-mono flex items-center justify-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm">developer_mode</span>
+                    Dev Mode Active
+                  </div>
+                  <p className="text-xs text-[#a0cc98]">No SMTP server configured. Use the link below to verify:</p>
+                  <Link 
+                    href={devLink.replace("http://localhost:3000", "")} 
+                    className="inline-block px-4 py-2 bg-[#84b07c]/20 hover:bg-[#84b07c]/30 text-[#84b07c] font-bold rounded-lg text-sm transition-colors break-all"
+                  >
+                    Reset Password
+                  </Link>
+                </div>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {error && (
+                <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
+                  {error}
+                </div>
+              )}
+              {/* Email input */}
+              <div className="space-y-2">
+                <label className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
+                  Work Email Address
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">
+                    mail
+                  </span>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@company.com"
+                    className="w-full bg-[#0c0e17] border border-outline-variant/30 rounded-xl px-4 py-3.5 pr-12 text-body-sm text-on-surface focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+              </div>
+
+              {/* Submit button */}
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center justify-center gap-2"
+              >
+                {isLoading ? "Sending Instructions..." : "Send Reset Link"}
+                <span className="material-symbols-outlined text-sm font-bold">arrow_forward</span>
+              </button>
+            </form>
+          )}
 
           {/* Back link */}
           <div className="text-center">

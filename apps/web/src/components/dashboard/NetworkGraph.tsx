@@ -14,93 +14,66 @@ export default function NetworkGraph({ accountId }: NetworkGraphProps) {
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Generate graph elements dynamically for the subject account ID
-    const elements = [
-      // Center Subject Account Node
-      {
-        data: {
-          id: "subject",
-          label: `Account: ${accountId.substring(0, 10)}`,
-          type: "account",
-          risk: "high",
-        },
-      },
-      // Customer profile node
-      {
-        data: {
-          id: "customer",
-          label: "Customer: Vasily Kandinsky",
-          type: "customer",
-          risk: "low",
-        },
-      },
-      // KYC Linked Phone Node
-      {
-        data: {
-          id: "phone",
-          label: "Phone: +41 22 798 1204",
-          type: "phone",
-          risk: "low",
-        },
-      },
-      // Shared Device Session Nodes
-      {
-        data: {
-          id: "device_1",
-          label: "MacBook Pro (ID: 7291a)",
-          type: "device",
-          risk: "medium",
-        },
-      },
-      {
-        data: {
-          id: "device_2",
-          label: "iPhone 15 Pro (ID: 9912c)",
-          type: "device",
-          risk: "critical",
-        },
-      },
-      // Shared IP Node
-      {
-        data: {
-          id: "ip_address",
-          label: "IP: 195.176.3.11",
-          type: "ip",
-          risk: "critical",
-        },
-      },
-      // Beneficiaries
-      {
-        data: {
-          id: "beneficiary_1",
-          label: "Bene: Bank of Zurich",
-          type: "counterparty",
-          risk: "medium",
-        },
-      },
-      {
-        data: {
-          id: "beneficiary_2",
-          label: "Bene: Cayman Fund (Mule)",
-          type: "counterparty",
-          risk: "critical",
-        },
-      },
+    let cy: cytoscape.Core;
 
-      // Links (Edges)
-      { data: { source: "customer", target: "subject", label: "OWNS" } },
-      { data: { source: "customer", target: "phone", label: "MOBILE" } },
-      { data: { source: "customer", target: "device_1", label: "LOGGED_IN" } },
-      { data: { source: "customer", target: "device_2", label: "LOGGED_IN" } },
-      { data: { source: "device_2", target: "ip_address", label: "USED_IP" } },
-      { data: { source: "subject", target: "beneficiary_1", label: "TRANSFER" } },
-      { data: { source: "subject", target: "beneficiary_2", label: "TRANSFER" } },
-      { data: { source: "ip_address", target: "beneficiary_2", label: "SHARED_FOOTPRINT" } },
-    ];
+    const fetchAndRenderGraph = async () => {
+      try {
+        const { apiClient } = await import("../../services/api-client");
+        const decodedAccountId = decodeURIComponent(accountId);
+        const res = await apiClient.get<any>(`/api/v1/graph/expand/ACC-${encodeURIComponent(decodedAccountId)}`);
+        const graphData =
+          res?.nodes && Array.isArray(res.nodes)
+            ? res
+            : res?.data?.nodes && Array.isArray(res.data.nodes)
+            ? res.data
+            : null;
 
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements: elements,
+        let elements: any[] = [];
+        if (graphData) {
+          // Map backend nodes to Cytoscape format
+          const nodes = graphData.nodes.map((n: any) => ({
+            data: {
+              id: n.id,
+              label: n.label || n.id,
+              type: n.type || "account",
+              risk: n.riskScore >= 70 ? "critical" : n.riskScore >= 40 ? "medium" : "low"
+            }
+          }));
+          // Map backend edges to Cytoscape format
+          const edges = (graphData.edges || []).map((e: any) => ({
+            data: {
+              id: e.id,
+              source: e.source,
+              target: e.target,
+              label: e.label || "TRANSFER"
+            }
+          }));
+          
+          // Ensure the source account node exists to prevent Cytoscape errors
+          if (!nodes.find((n: any) => n.data.id === `ACC-${decodedAccountId}`)) {
+            nodes.push({
+              data: {
+                id: `ACC-${decodedAccountId}`,
+                label: `Account: ${decodedAccountId}`,
+                type: "account",
+                risk: "high"
+              }
+            });
+          }
+          
+          elements = [...nodes, ...edges];
+        }
+
+        if (elements.length === 0) {
+          // Fallback if no data (for example, if this account doesn't exist in DB)
+          elements = [
+            { data: { id: `ACC-${decodedAccountId}`, label: `Account: ${decodedAccountId}`, type: "account", risk: "high" } }
+          ];
+        }
+
+        cy = cytoscape({
+          container: containerRef.current,
+          elements: elements,
       boxSelectionEnabled: false,
       autounselectify: false,
       style: [
@@ -185,6 +158,7 @@ export default function NetworkGraph({ accountId }: NetworkGraphProps) {
       ],
       layout: {
         name: "cose",
+        animate: false,
         nodeOverlap: 20,
         nestingFactor: 1.2,
         gravity: 1,
@@ -215,6 +189,20 @@ export default function NetworkGraph({ accountId }: NetworkGraphProps) {
       }
     });
 
+    cy.on("tap", "edge", (evt) => {
+      const edge = evt.target;
+      const label = edge.data("label");
+      const source = edge.data("source");
+      const target = edge.data("target");
+
+      if (label === "TRANSFER") {
+        const mockTxId = `998A-112B`; // Using mock ID that matches the page's structure
+        window.location.href = `/transactions/${mockTxId}`;
+      } else {
+        setSelectedNodeInfo(`Edge Type: ${label} | Connected Entities: ${source} <-> ${target}`);
+      }
+    });
+
     // Add styles for dimming other nodes
     cy.style()
       .selector(".dimmed")
@@ -223,8 +211,14 @@ export default function NetworkGraph({ accountId }: NetworkGraphProps) {
       })
       .update();
 
+      } catch (error) {
+        console.error("Failed to load graph data dynamically", error);
+      }
+    };
+    fetchAndRenderGraph();
+
     return () => {
-      cy.destroy();
+      if (cy) cy.destroy();
     };
   }, [accountId]);
 

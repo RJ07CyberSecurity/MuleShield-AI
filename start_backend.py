@@ -18,7 +18,9 @@ dependencies = [
     "bcrypt",
     "pyjwt",
     "cryptography",
-    "python-multipart"
+    "python-multipart",
+    "openpyxl",
+    "python-dotenv"
 ]
 
 print("Installing required Python packages...")
@@ -38,6 +40,16 @@ try:
 except Exception as e:
     print(f"Error installing shared package: {e}")
     sys.exit(1)
+
+# Load environment variables from .env before starting services
+try:
+    from dotenv import load_dotenv
+    root_env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".env"))
+    if os.path.exists(root_env_path):
+        load_dotenv(root_env_path)
+        print("Loaded environment variables from .env file.")
+except ImportError:
+    print("Warning: python-dotenv not installed. Could not load .env file.")
 
 # 3. Start services as separate processes
 services = [
@@ -113,6 +125,8 @@ print("Reporting Service:  http://localhost:8006")
 print("="*50)
 print("Keep this script running to retain backend connections.")
 
+CRITICAL_SERVICES = {"Ingestion Service", "Detection Engine", "API Gateway"}
+
 try:
     while True:
         # Check if any service crashed
@@ -122,9 +136,17 @@ try:
                 print(f"\nWARNING: {name} process exited unexpectedly with code {poll}!")
                 log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), f"{name.lower().replace(' ', '_')}.log"))
                 if os.path.exists(log_path):
-                    with open(log_path, "r", encoding="utf-8") as lf:
-                        print(f"Process logs:\n{lf.read()[-3000:]}") # Show last 3000 chars of logs
-                sys.exit(poll)
+                    with open(log_path, "r", encoding="utf-8", errors="replace") as lf:
+                        log_content = lf.read()[-3000:]
+                        sys.stdout.buffer.write(f"Process logs:\n{log_content}".encode('utf-8', errors='replace'))
+                        sys.stdout.flush()
+                        print()
+                if name in CRITICAL_SERVICES:
+                    sys.exit(poll)
+                else:
+                    # Non-critical service — remove from list and keep running
+                    processes[:] = [(n, pr) for (n, pr) in processes if n != name]
+                    break
         time.sleep(2)
 except KeyboardInterrupt:
     print("\nStopping services...")

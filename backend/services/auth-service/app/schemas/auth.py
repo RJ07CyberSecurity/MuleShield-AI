@@ -84,3 +84,38 @@ class MFAVerifyRequest(BaseModel):
 
 class FirebaseLoginRequest(BaseModel):
     id_token: str = Field(..., description="Firebase ID token")
+
+
+class PhoneOtpSendRequest(BaseModel):
+    phone_number: str = Field(
+        ...,
+        pattern=r"^\+[1-9]\d{7,14}$",
+        description="E.164 phone number (e.g. +14155552671)",
+    )
+
+
+class PhoneOtpSendResponse(BaseModel):
+    session_id: str = Field(..., description="OTP session identifier for verification")
+    expires_in: int = Field(..., description="OTP validity window in seconds")
+    dev_code: str | None = Field(
+        default=None,
+        description="The actual code (ONLY RETURNED IN DEV MODE for easy local testing)"
+    )
+
+
+class ForgotPasswordLinkRequest(BaseModel):
+    """Schema for requesting a password reset link."""
+    email: str = Field(..., pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+
+
+class PasswordResetVerifyRequest(BaseModel):
+    """Schema to verify token and reset password."""
+    email: str = Field(..., pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
+    token: str = Field(..., description="UUID reset token")
+    new_password: str = Field(..., min_length=8, description="New password must be at least 8 characters long")
+
+
+class PhoneOtpVerifyRequest(BaseModel):
+    phone_number: str = Field(..., pattern=r"^\+[1-9]\d{7,14}$")
+    session_id: str = Field(..., min_length=8)
+    code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")

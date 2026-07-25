@@ -37,64 +37,7 @@ function mapBackendCase(c: any): Case {
   };
 }
 
-const mockCases: Case[] = [
-  {
-    id: "CASE-2026-0881",
-    title: "Marcus Miller Layering Loop",
-    status: "INVESTIGATING",
-    riskScore: 94,
-    assignedTo: "Sarah Chambers (CCO)",
-    createdAt: "2026-07-11T14:32:00Z",
-    description:
-      "Multi-hop structure route flagged via IP-192.168.4.11 and device DEV-FNG-99812. Suspected money mule ring layering funds to clear through shell corporate entities.",
-    muleNodes: ["ACC-9912-MULE-B", "ACC-0912-RETAIL", "DEV-FNG-99812"],
-    transactionsCount: 14,
-    totalAmount: 15700,
-    notes: [
-      {
-        id: "n1",
-        investigator: "Sarah Chambers",
-        timestamp: "2026-07-12T10:15:00Z",
-        text: "Confirmed hardware device match between Marcus Miller and Anna Lin's accounts. Highly suspicious overlapping session tokens.",
-      },
-    ],
-  },
-  {
-    id: "CASE-2026-0882",
-    title: "Cross-Border Smurf Cluster",
-    status: "NEW",
-    riskScore: 78,
-    assignedTo: "Triage Team (Auto)",
-    createdAt: "2026-07-14T20:00:00Z",
-    description:
-      "High-frequency transfers under reporting thresholds to destination accounts located in high-risk foreign jurisdictions.",
-    muleNodes: ["ACC-7832-RESERVE", "ACC-1011-MULE-C"],
-    transactionsCount: 8,
-    totalAmount: 9800,
-    notes: [],
-  },
-  {
-    id: "CASE-2026-0883",
-    title: "Ingress Velocity Deviation",
-    status: "CLOSED",
-    riskScore: 56,
-    assignedTo: "Marcus Thorne",
-    createdAt: "2026-07-09T08:15:00Z",
-    description:
-      "Dormant account reactivated with transaction size exceeding normal range by 800%.",
-    muleNodes: ["ACC-1102-LEGACY", "ACC-5421-MULE-A"],
-    transactionsCount: 3,
-    totalAmount: 45000,
-    notes: [
-      {
-        id: "n2",
-        investigator: "Marcus Thorne",
-        timestamp: "2026-07-10T15:44:00Z",
-        text: "User submitted updated source of wealth declaration forms. Anomaly cleared. Account marked safe and case closed.",
-      },
-    ],
-  },
-];
+const mockCases: Case[] = [];
 
 export const useCaseStore = create<CaseState>((set) => ({
   cases: mockCases,
@@ -113,7 +56,7 @@ export const useCaseStore = create<CaseState>((set) => ({
           ? response
           : null;
 
-      if (rawCases && rawCases.length > 0) {
+      if (rawCases !== null) {
         const mapped = rawCases.map(mapBackendCase);
         set({ cases: mapped, isLoading: false });
       } else {

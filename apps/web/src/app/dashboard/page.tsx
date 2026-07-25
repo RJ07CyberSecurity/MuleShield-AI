@@ -16,20 +16,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import AccountDataUploader from "../../components/dashboard/AccountDataUploader";
 import IngestionSummaryCard from "../../components/dashboard/IngestionSummaryCard";
 import FlaggedAccountsTable from "../../components/dashboard/FlaggedAccountsTable";
+import IngestionHistoryPanel from "../../components/dashboard/IngestionHistoryPanel";
 import { apiClient } from "../../services/api-client";
-
-const FALLBACK_TIMELINE = [
-  { time: "00:00", value: 340 },
-  { time: "02:00", value: 210 },
-  { time: "04:00", value: 430 },
-  { time: "06:00", value: 580 },
-  { time: "08:00", value: 310 },
-  { time: "10:00", value: 390 },
-  { time: "12:00", value: 180 },
-  { time: "14:00", value: 480 },
-  { time: "16:00", value: 610 },
-  { time: "18:00", value: 410 },
-];
 
 export default function DashboardPage() {
   const { addToast } = useUIStore();
@@ -37,77 +25,111 @@ export default function DashboardPage() {
   const [freezeExecuted, setFreezeExecuted] = useState(false);
   const [showUploader, setShowUploader] = useState(false);
   const [activeIngestionId, setActiveIngestionId] = useState<string | null>(null);
+
+  // Read activeIngestionId on mount, save when it changes
+  useEffect(() => {
+    const saved = sessionStorage.getItem("activeIngestionId");
+    if (saved) {
+      setActiveIngestionId(saved);
+      setFilterIngestionId(saved);
+    }
+  }, []);
+
+  const handleSetActiveIngestionId = (id: string | null) => {
+    setActiveIngestionId(id);
+    if (id) {
+      sessionStorage.setItem("activeIngestionId", id);
+    } else {
+      sessionStorage.removeItem("activeIngestionId");
+    }
+  };
   const [filterIngestionId, setFilterIngestionId] = useState<string | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [timelineData, setTimelineData] = useState(FALLBACK_TIMELINE);
+  const [timelineData, setTimelineData] = useState<any[]>([]);
   const [liveTransactions, setLiveTransactions] = useState<any[]>([]);
-  const [kpiStats, setKpiStats] = useState({
-    total_accounts: "42,892",
-    critical_alerts: "124",
-    suspected_laundered_volume: "$3.2M",
-    ai_accuracy: "99.2%",
-  });
+  const [kpiStats, setKpiStats] = useState<any | null>(null);
 
-  // Fetch real dashboard data on mount
-  useEffect(() => {
-    async function loadDashboard() {
-      setStatsLoading(true);
-      try {
-        const [statsRes, timelineRes, txRes] = await Promise.allSettled([
-          apiClient.get<any>("/api/v1/dashboard/stats"),
-          apiClient.get<any>("/api/v1/dashboard/timeline"),
-          apiClient.get<any>("/api/v1/dashboard/critical-alerts"),
-        ]);
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
 
-        if (statsRes.status === "fulfilled" && statsRes.value?.data) {
-          setKpiStats(statsRes.value.data);
-        }
-        if (timelineRes.status === "fulfilled" && Array.isArray(timelineRes.value?.data)) {
-          setTimelineData(timelineRes.value.data);
-        }
-        if (txRes.status === "fulfilled" && Array.isArray(txRes.value?.data)) {
-          setLiveTransactions(txRes.value.data);
-        }
-      } catch {
-        // silently use fallback data
-      } finally {
-        setStatsLoading(false);
+  // Fetch real dashboard data — re-runs when a statement is selected
+  const loadDashboard = async (ingestionId: string | null = null) => {
+    setStatsLoading(true);
+    try {
+      const idParam = ingestionId ? `?ingestion_id=${ingestionId}` : "";
+      const timelineParams = ingestionId ? `?ingestion_id=${ingestionId}&time_range=${timeRange}` : `?time_range=${timeRange}`;
+      const [statsRes, timelineRes, txRes] = await Promise.allSettled([
+        apiClient.get<any>(`/api/v1/dashboard/stats${idParam}`, { cache: "no-store" }),
+        apiClient.get<any>(`/api/v1/dashboard/timeline${timelineParams}`, { cache: "no-store" }),
+        apiClient.get<any>(`/api/v1/dashboard/critical-alerts${idParam}`, { cache: "no-store" }),
+      ]);
+
+      if (statsRes.status === "fulfilled" && statsRes.value?.data) {
+        setKpiStats(statsRes.value.data);
       }
+      if (timelineRes.status === "fulfilled" && Array.isArray(timelineRes.value?.data)) {
+        setTimelineData(timelineRes.value.data);
+      }
+      if (txRes.status === "fulfilled" && Array.isArray(txRes.value?.data)) {
+        setLiveTransactions(txRes.value.data);
+        // Default to the highest risk transaction when new data loads
+        if (txRes.value.data.length > 0) {
+          const top = [...txRes.value.data].sort((a, b) => parseInt(b.score) - parseInt(a.score))[0];
+          setSelectedTransactionId(top.id);
+        } else {
+          setSelectedTransactionId(null);
+        }
+      }
+    } catch {
+      // silently use fallback data
+    } finally {
+      setStatsLoading(false);
     }
-    loadDashboard();
-  }, []);
+  };
+
+  useEffect(() => {
+    loadDashboard(activeIngestionId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIngestionId, timeRange]);
+
+  const isFiltered = !!activeIngestionId;
 
   const stats = [
     {
-      title: "TOTAL ACCOUNTS",
-      value: statsLoading ? "..." : kpiStats.total_accounts,
-      change: "+12.4% vs last mo",
+      title: isFiltered ? "UNIQUE ACCOUNTS" : "TOTAL ACCOUNTS",
+      value: statsLoading || !kpiStats ? "..." : kpiStats.total_accounts,
+      change: isFiltered ? "In this statement" : "+12.4% vs last mo",
       isPositive: true,
       icon: "group",
       color: "text-primary bg-primary/10 border-primary/20",
-      tooltip: "Total registered banking accounts indexed across compliance ledgers."
+      tooltip: isFiltered
+        ? "Unique account endpoints involved in this statement batch."
+        : "Total registered banking accounts indexed across compliance ledgers."
     },
     {
-      title: "CRITICAL ALERTS",
-      value: statsLoading ? "..." : kpiStats.critical_alerts,
-      change: "High priority surge",
+      title: isFiltered ? "FLAGGED MULES" : "CRITICAL ALERTS",
+      value: statsLoading || !kpiStats ? "..." : kpiStats.critical_alerts,
+      change: isFiltered ? "From this batch" : "High priority surge",
       isPositive: false,
       icon: "error",
       color: "text-risk-high bg-risk-high/10 border-risk-high/20",
-      tooltip: "Alerts exceeding threat score 90 requiring immediate remediation."
+      tooltip: isFiltered
+        ? "Accounts flagged by the detection engine in this statement batch."
+        : "Alerts exceeding threat score 90 requiring immediate remediation."
     },
     {
-      title: "MONEY LAUNDERED (EST)",
-      value: statsLoading ? "..." : kpiStats.suspected_laundered_volume,
-      change: "AI cluster estimate",
+      title: isFiltered ? "STATEMENT VOLUME" : "MONEY LAUNDERED (EST)",
+      value: statsLoading || !kpiStats ? "..." : kpiStats.suspected_laundered_volume,
+      change: isFiltered ? "Confirmed transactions" : "AI cluster estimate",
       isPositive: true,
       icon: "payments",
       color: "text-risk-medium bg-risk-medium/10 border-risk-medium/20",
-      tooltip: "Aggregated transaction volume flagged in suspicious loop configurations."
+      tooltip: isFiltered
+        ? "Total confirmed transaction volume in this ingested statement."
+        : "Aggregated transaction volume flagged in suspicious loop configurations."
     },
     {
       title: "AI ACCURACY",
-      value: statsLoading ? "..." : kpiStats.ai_accuracy,
+      value: statsLoading || !kpiStats ? "..." : kpiStats.ai_accuracy,
       change: "Verified last 500 cases",
       isPositive: true,
       icon: "auto_awesome",
@@ -116,33 +138,7 @@ export default function DashboardPage() {
     },
   ];
 
-  // Determine transactions to display: prefer real data from API, else static fallback
-  const transactions = liveTransactions.length > 0 ? liveTransactions : [
-    {
-      id: "ACC-72948-X",
-      type: "SWIFT / International",
-      amount: "$45,200.00",
-      score: "89/100",
-      status: "Investigating",
-      riskLevel: "critical",
-    },
-    {
-      id: "ACC-11023-B",
-      type: "P2P Transfer",
-      amount: "$2,150.00",
-      score: "54/100",
-      status: "In Queue",
-      riskLevel: "medium",
-    },
-    {
-      id: "ACC-99211-L",
-      type: "Cash Deposit",
-      amount: "$9,999.00",
-      score: "72/100",
-      status: "Flagged",
-      riskLevel: "high",
-    },
-  ];
+  const transactions = liveTransactions;
 
   const handleExecuteFreeze = () => {
     setFreezeExecuted(true);
@@ -165,7 +161,10 @@ export default function DashboardPage() {
         <div className="flex gap-2">
           {filterIngestionId && (
             <button
-              onClick={() => setFilterIngestionId(null)}
+              onClick={() => {
+                setFilterIngestionId(null);
+                handleSetActiveIngestionId(null);
+              }}
               className="px-4 py-2.5 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 rounded-xl text-xs font-semibold text-on-surface transition-colors"
             >
               Clear Filter
@@ -181,13 +180,26 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Ingestion summary stats card */}
+      {/* Ingestion History Panel — always visible, auto-loads past statements */}
+      <IngestionHistoryPanel
+        activeIngestionId={activeIngestionId}
+        onSelect={(id) => {
+          handleSetActiveIngestionId(id);
+          setFilterIngestionId(id);
+          addToast("Statement selected. Loading ingestion summary...", "info");
+        }}
+      />
+
+      {/* Ingestion summary stats card — shows when a statement is selected */}
       {activeIngestionId && (
         <IngestionSummaryCard
           ingestionId={activeIngestionId}
           onViewFlagged={(id) => {
             setFilterIngestionId(id);
             addToast("Filtering dashboard tables to the current statement ingestion run.", "info");
+            setTimeout(() => {
+              document.getElementById("flagged-table-section")?.scrollIntoView({ behavior: "smooth" });
+            }, 100);
           }}
         />
       )}
@@ -339,14 +351,16 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Singapore Cluster Metrics */}
+          {/* Cluster Metrics */}
           <div className="space-y-2">
             <div className="flex justify-between items-center text-[10px] font-label-mono uppercase tracking-wider">
-              <span className="text-on-surface">Singapore Cluster</span>
-              <span className="text-risk-critical font-bold">Critical</span>
+              <span className="text-on-surface">{isFiltered ? "Active Batch Scan" : "Global Network"}</span>
+              <span className={`font-bold ${transactions.length > 0 ? "text-risk-critical" : "text-risk-low"}`}>
+                {transactions.length > 0 ? "High Activity" : "Monitoring"}
+              </span>
             </div>
             <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden w-full">
-              <div className="bg-risk-critical h-full rounded-full w-[92%]" />
+              <div className={`${transactions.length > 0 ? "bg-risk-critical" : "bg-risk-low"} h-full rounded-full`} style={{ width: transactions.length > 0 ? "92%" : "25%" }} />
             </div>
           </div>
         </section>
@@ -385,39 +399,76 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/10">
-                  {transactions.map((tx, idx) => (
-                    <tr
-                      key={idx}
-                      className="text-body-sm hover:bg-surface-container-high/30 transition-colors"
-                    >
-                      <td className="px-4 py-3 font-semibold text-on-surface font-label-mono truncate">{tx.id}</td>
-                      <td className="px-4 py-3 text-on-surface-variant truncate">{tx.type}</td>
-                      <td className="px-4 py-3 font-bold text-on-surface truncate">{tx.amount}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-center">
-                          <span
-                            className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
-                              tx.riskLevel === "critical"
-                                ? "text-risk-critical border-risk-critical/30 bg-risk-critical/10"
-                                : tx.riskLevel === "high"
-                                ? "text-risk-high border-risk-high/30 bg-risk-high/10"
-                                : "text-risk-medium border-risk-medium/30 bg-risk-medium/10"
-                            }`}
-                          >
-                            {tx.score}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right truncate">
-                        <span className="inline-flex items-center gap-1.5 text-xs text-on-surface">
-                          {tx.status === "Investigating" && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-risk-critical animate-pulse"></span>
-                          )}
-                          {tx.status}
-                        </span>
+                  {statsLoading ? (
+                    [...Array(3)].map((_, i) => (
+                      <tr key={`sk-${i}`} className="animate-pulse">
+                        <td className="px-4 py-4 w-32">
+                          <div className="h-3 bg-surface-container-high rounded w-20 mb-1.5"></div>
+                          <div className="h-2 bg-surface-container-high rounded w-16"></div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="h-3 bg-surface-container-high rounded w-28"></div>
+                        </td>
+                        <td className="px-4 py-4 w-36">
+                          <div className="h-3 bg-surface-container-high rounded w-16"></div>
+                        </td>
+                        <td className="px-4 py-4 w-24">
+                          <div className="h-5 bg-surface-container-high rounded w-12 mx-auto"></div>
+                        </td>
+                        <td className="px-4 py-4 text-right w-28">
+                          <div className="h-3 bg-surface-container-high rounded w-16 ml-auto"></div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : transactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-8 text-on-surface-variant text-xs">
+                        No transactions detected in this statement run.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    transactions.map((tx, idx) => (
+                      <tr
+                        key={idx}
+                        onClick={() => setSelectedTransactionId(tx.id)}
+                        className={`text-body-sm transition-colors cursor-pointer ${
+                          selectedTransactionId === tx.id
+                            ? "bg-primary/10 border-l-2 border-primary"
+                            : "hover:bg-surface-container-high/30"
+                        }`}
+                      >
+                        <td className="px-4 py-3 font-semibold text-on-surface font-label-mono truncate">
+                          <div>{tx.id}</div>
+                          <div className="text-[10px] text-on-surface-variant font-normal tracking-tight truncate">{tx.entity_name || "Unknown Entity"}</div>
+                        </td>
+                        <td className="px-4 py-3 text-on-surface-variant truncate">{tx.type}</td>
+                        <td className="px-4 py-3 font-bold text-on-surface truncate">{tx.amount}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-center">
+                            <span
+                              className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
+                                tx.riskLevel === "critical"
+                                  ? "text-risk-critical border-risk-critical/30 bg-risk-critical/10"
+                                  : tx.riskLevel === "high"
+                                  ? "text-risk-high border-risk-high/30 bg-risk-high/10"
+                                  : "text-risk-medium border-risk-medium/30 bg-risk-medium/10"
+                              }`}
+                            >
+                              {tx.score}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right truncate">
+                          <span className="inline-flex items-center gap-1.5 text-xs text-on-surface">
+                            {tx.status === "Investigating" && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-risk-critical animate-pulse"></span>
+                            )}
+                            {tx.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -427,73 +478,70 @@ export default function DashboardPage() {
         {/* AI Recommendation Sidebar & Suspicious Hops */}
         <section className="lg:col-span-1 space-y-6 text-left">
           {/* AI Recommendation Box */}
-          <div className="p-6 rounded-2xl border-2 border-risk-high/30 bg-surface-container-low space-y-6">
-            <div className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-risk-high text-3xl font-semibold">
-                smart_toy
-              </span>
-              <div>
-                <h4 className="font-bold text-sm text-on-surface uppercase tracking-wide">
-                  AI Recommendation
-                </h4>
-                <p className="text-[10px] font-label-mono text-on-surface-variant uppercase mt-0.5">
-                  Case #882-Alpha
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-2 border-t border-outline-variant/15">
-              <div className="flex justify-between items-center text-[10px] font-label-mono uppercase tracking-wider text-on-surface-variant">
-                <span>Risk Score</span>
-                <span className="font-bold text-risk-high">89/100</span>
-              </div>
-              <div className="h-2 bg-surface-container-high rounded-full overflow-hidden w-full">
-                <div className="bg-risk-high h-full rounded-full w-[89%]" />
-              </div>
-            </div>
-
-            {/* Explanations List */}
-            <div className="space-y-4 pt-2">
-              <div className="text-[10px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
-                Explainable AI Factors
-              </div>
-              <div className="space-y-3">
-                <div className="flex gap-3 items-start">
-                  <span className="material-symbols-outlined text-risk-high text-base mt-0.5">bolt</span>
+          {/* AI Recommendation Box */}
+          {transactions.length > 0 && selectedTransactionId ? (() => {
+            const topTx = transactions.find(t => t.id === selectedTransactionId) || transactions[0];
+            const riskValue = parseInt(topTx.score) || 0;
+            return (
+              <div className="p-6 rounded-2xl border-2 border-risk-high/30 bg-surface-container-low space-y-6">
+                <div className="flex items-start gap-3">
+                  <span className="material-symbols-outlined text-risk-high text-3xl font-semibold">
+                    smart_toy
+                  </span>
                   <div>
-                    <h5 className="font-semibold text-xs text-on-surface">Rapid In-Out Flow</h5>
-                    <p className="text-[10px] text-on-surface-variant">Funds moved &lt; 4 min from deposit.</p>
+                    <h4 className="font-bold text-sm text-on-surface uppercase tracking-wide">
+                      AI Recommendation
+                    </h4>
+                    <p className="text-[10px] font-label-mono text-on-surface-variant uppercase mt-0.5">
+                      Case {topTx.id}
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex gap-3 items-start">
-                  <span className="material-symbols-outlined text-risk-high text-base mt-0.5">share</span>
-                  <div>
-                    <h5 className="font-semibold text-xs text-on-surface">Device Sharing</h5>
-                    <p className="text-[10px] text-on-surface-variant">Linked to 4 other flagged accounts.</p>
+                <div className="space-y-2 pt-2 border-t border-outline-variant/15">
+                  <div className="flex justify-between items-center text-[10px] font-label-mono uppercase tracking-wider text-on-surface-variant">
+                    <span>Risk Score</span>
+                    <span className="font-bold text-risk-high">{topTx.score}</span>
+                  </div>
+                  <div className="h-2 bg-surface-container-high rounded-full overflow-hidden w-full">
+                    <div className="bg-risk-high h-full rounded-full" style={{ width: `${riskValue}%` }} />
                   </div>
                 </div>
 
-                <div className="flex gap-3 items-start">
-                  <span className="material-symbols-outlined text-risk-high text-base mt-0.5">layers</span>
-                  <div>
-                    <h5 className="font-semibold text-xs text-on-surface">Layering Pattern</h5>
-                    <p className="text-[10px] text-on-surface-variant">Obfuscated via 5 shell proxies.</p>
+                {/* Explanations List */}
+                <div className="space-y-4 pt-2">
+                  <div className="text-[10px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
+                    Explainable AI Factors
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex gap-3 items-start">
+                      <span className="material-symbols-outlined text-risk-high text-base mt-0.5">bolt</span>
+                      <div>
+                        <h5 className="font-semibold text-xs text-on-surface">{topTx.type}</h5>
+                        <p className="text-[10px] text-on-surface-variant">Detected anomaly pattern.</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
+
+                {/* Action button */}
+                <button
+                  onClick={handleExecuteFreeze}
+                  disabled={freezeExecuted}
+                  className="w-full py-3.5 rounded-xl bg-risk-critical text-white font-bold text-body-sm hover:bg-risk-critical/90 transition-colors flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <span className="material-symbols-outlined text-base">emergency_home</span>
+                  {freezeExecuted ? "Freeze Executed" : "Execute Freeze"}
+                </button>
               </div>
+            );
+          })() : (
+            <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low text-center flex flex-col items-center justify-center gap-3 h-full">
+              <span className="material-symbols-outlined text-on-surface-variant text-4xl">check_circle</span>
+              <div className="text-on-surface-variant text-sm font-semibold">No Critical Recommendations</div>
+              <p className="text-[10px] text-on-surface-variant max-w-[200px]">Your systems are currently secure. No flagged entities require attention.</p>
             </div>
-
-            {/* Action button */}
-            <button
-              onClick={handleExecuteFreeze}
-              disabled={freezeExecuted}
-              className="w-full py-3.5 rounded-xl bg-risk-critical text-white font-bold text-body-sm hover:bg-risk-critical/90 transition-colors flex items-center justify-center gap-2 shadow-lg"
-            >
-              <span className="material-symbols-outlined text-base">emergency_home</span>
-              {freezeExecuted ? "Freeze Executed" : "Execute Freeze"}
-            </button>
-          </div>
+          )}
 
           {/* Suspicious Hops node diagram wrapper */}
           <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-4">
@@ -509,29 +557,33 @@ export default function DashboardPage() {
             {/* Visual Node Diagram simulation */}
             <div className="p-6 bg-[#07090e] border border-outline-variant/20 rounded-xl flex flex-col items-center justify-center gap-3 relative">
               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#434655_1px,transparent_1px)] [background-size:12px_12px]"></div>
-              <span className="material-symbols-outlined text-primary text-3xl animate-pulse">hub</span>
+              <span className={`material-symbols-outlined ${transactions.length > 0 ? "text-primary animate-pulse" : "text-on-surface-variant"} text-3xl`}>hub</span>
               <div className="text-center z-10">
-                <div className="text-[9px] font-label-mono text-risk-high uppercase font-bold tracking-widest">
-                  Potential Mule Ring
+                <div className={`text-[9px] font-label-mono ${transactions.length > 0 ? "text-risk-high" : "text-on-surface-variant"} uppercase font-bold tracking-widest`}>
+                  {transactions.length > 0 ? "Potential Mule Ring" : "No active rings"}
                 </div>
-                <div className="font-bold text-xs text-on-surface mt-0.5">8 Linked Entities</div>
+                <div className="font-bold text-xs text-on-surface mt-0.5">{transactions.length > 0 ? `${transactions.length * 2} Linked Entities` : "0 Linked Entities"}</div>
               </div>
             </div>
 
-            <div className="flex gap-2">
-              <span className="px-2 py-0.5 bg-[#0d0f19] border border-outline-variant/20 rounded text-[9px] font-label-mono text-on-surface-variant">
-                Layer 2 Cluster
-              </span>
-              <span className="px-2 py-0.5 bg-[#0d0f19] border border-outline-variant/20 rounded text-[9px] font-label-mono text-on-surface-variant">
-                IP Conflict
-              </span>
-            </div>
+            {transactions.length > 0 && (
+              <div className="flex gap-2">
+                <span className="px-2 py-0.5 bg-[#0d0f19] border border-outline-variant/20 rounded text-[9px] font-label-mono text-on-surface-variant">
+                  Layer 2 Cluster
+                </span>
+                <span className="px-2 py-0.5 bg-[#0d0f19] border border-outline-variant/20 rounded text-[9px] font-label-mono text-on-surface-variant">
+                  IP Conflict
+                </span>
+              </div>
+            )}
           </div>
         </section>
       </div>
 
       {/* Flagged accounts registry table */}
-      <FlaggedAccountsTable ingestionId={filterIngestionId} />
+      <div id="flagged-table-section">
+        <FlaggedAccountsTable ingestionId={filterIngestionId} />
+      </div>
 
       {/* Account Data Uploader Modal Dialog */}
       <AnimatePresence>
@@ -549,6 +601,7 @@ export default function DashboardPage() {
                   setActiveIngestionId(ingestionId);
                   setFilterIngestionId(ingestionId);
                   setShowUploader(false);
+                  // loadDashboard is triggered automatically via useEffect([activeIngestionId])
                 }}
               />
             </motion.div>

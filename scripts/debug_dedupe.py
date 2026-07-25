@@ -1,5 +1,5 @@
 import sys, os, asyncio
-sys.path.insert(0, 'E:/MuleShieldAI/backend/shared')
+sys.path.insert(0, 'E:/MuleShieldAI/backend')
 sys.path.insert(0, 'E:/MuleShieldAI/backend/services/ingestion-service')
 
 from app.api.v1.ingestion import parse_pdf

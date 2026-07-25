@@ -16,7 +16,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const { sidebarCollapsed } = useUIStore();
   const { alerts, fetchAlerts } = useAlertStore();
   const { cases, fetchCases } = useCaseStore();
-  const { user, isAuthenticated, initialize, logout } = useAuthStore();
+  const { user, isAuthenticated, isLoading, initialize, logout } = useAuthStore();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -330,13 +330,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                         ) : (
                           <div className="space-y-1">
                             {matchedCases.map((c) => (
-                              <button
+                              <div
                                 key={c.id}
-                                onClick={() => {
-                                  saveRecentSearch(searchQuery);
-                                  setIsFocused(false);
-                                  router.push(`/cases/${c.muleNodes[0] || "ACC-092281"}`);
-                                }}
                                 className="w-full p-2 hover:bg-surface-container-high rounded-lg text-left text-body-sm flex justify-between items-center transition-colors"
                               >
                                 <div className="truncate pr-2">
@@ -350,7 +345,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                                 <span className="px-1.5 py-0.2 bg-primary/10 border border-primary/20 rounded text-[9px] font-label-mono text-primary font-bold">
                                   {c.riskScore}
                                 </span>
-                              </button>
+                              </div>
                             ))}
                           </div>
                         )}
@@ -385,7 +380,39 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
         {/* Dynamic Route Content - Premium Constraints */}
         <main className="flex-1 p-6 md:p-8 max-w-[1600px] w-full mx-auto space-y-8">
-          {children}
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6">
+              <div className="relative flex items-center justify-center w-20 h-20">
+                <div className="absolute inset-0 rounded-full border-t-2 border-primary animate-spin"></div>
+                <div className="absolute inset-2 rounded-full border-b-2 border-primary/50 animate-spin direction-reverse"></div>
+                <span className="material-symbols-outlined text-primary text-3xl animate-pulse">shield</span>
+              </div>
+              <h2 className="text-xl font-bold font-display-kpi text-on-surface animate-pulse">
+                Authenticating Session...
+              </h2>
+              <p className="text-sm text-on-surface-variant max-w-sm">
+                Retrieving your compliance clearance profile and establishing secure connection to the MuleShield AI network.
+              </p>
+            </div>
+          ) : isAuthenticated && user ? (
+            user.is_active && user.roles.some((r) => ["investigator", "compliance_officer", "administrator", "analyst", "system"].includes(r)) ? (
+              children
+            ) : (
+              <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+                <span className="material-symbols-outlined text-risk-high text-6xl">gpp_bad</span>
+                <h2 className="text-3xl font-bold text-on-surface">Access Denied</h2>
+                <p className="text-on-surface-variant max-w-md">
+                  You do not have the required permissions to view the investigative dashboard. Please contact your system administrator to request access.
+                </p>
+                <button
+                  onClick={logout}
+                  className="px-6 py-3 mt-4 bg-primary text-on-primary rounded-xl font-bold hover:bg-primary-fixed transition-colors"
+                >
+                  Sign Out
+                </button>
+              </div>
+            )
+          ) : null}
         </main>
       </div>
 

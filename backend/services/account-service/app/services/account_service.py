@@ -84,8 +84,44 @@ class AccountService:
         logger.info("Bank account unfrozen and returned to ACTIVE status", account_id=str(account_id), reason=reason)
         return account
 
-    async def list_accounts(self, customer_id: uuid.UUID | None = None) -> list[Account]:
+    async def list_accounts(self, customer_id: uuid.UUID | None = None, owner_id: str | None = None) -> list[Account]:
+        return await self.repository.list_accounts(customer_id=customer_id, owner_id=owner_id)
+
+    async def get_account_profile(self, account_id: uuid.UUID) -> dict:
         """
-        Retrieves all bank accounts, optionally filtered by customer ID.
+        Aggregates account details, customer identity, and recent linked accounts.
         """
-        return await self.repository.list_accounts(customer_id=customer_id)
+        account = await self.repository.get_account_with_customer(account_id)
+        if not account:
+            raise NotFoundException("Bank account record not found.")
+
+        # If it's the mock data or SQLite, customer might be None, so handle gracefully
+        customer_info = None
+        if account.customer:
+            customer_info = {
+                "full_name": account.customer.full_name,
+                "mobile": account.customer.mobile,
+                "email": account.customer.email,
+                "pan_number": account.customer.pan_number,
+                "aadhaar_number_masked": account.customer.aadhaar_number_masked,
+                "occupation": account.customer.occupation,
+                "address": account.customer.address
+            }
+
+        transaction_summary = await self.repository.get_transaction_summary(account.account_number)
+        linked_accounts = await self.repository.get_linked_accounts(account.account_number, limit=5)
+
+        # Build response payload matching the schema
+        return {
+            "account_id": account.id,
+            "account_number": account.account_number,
+            "ifsc": getattr(account, "ifsc", "UNKNOWN"),
+            "bank_name": getattr(account, "bank_name", "Unknown Bank"),
+            "branch": getattr(account, "branch", "Main Branch"),
+            "balance": account.balance,
+            "currency": getattr(account, "currency", "USD"),
+            "status": account.status,
+            "customer": customer_info,
+            "transaction_summary": transaction_summary,
+            "linked_accounts": linked_accounts
+        }

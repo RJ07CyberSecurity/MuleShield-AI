@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
                 await conn.run_sync(Base.metadata.create_all)
             logger.info("SQLite database tables verified and created")
             # Trigger seeding
-            await seed_customer_data()
+            # await seed_customer_data()
         else:
             logger.info("Connection pool successfully established")
     except Exception as exc:
@@ -110,7 +110,12 @@ async def seed_customer_data() -> None:
             email="john.doe@gmail.com",
             phone="+1-555-0199",
             kyc_status="APPROVED",
-            risk_score=0.15
+            risk_score=0.15,
+            pan_number="AABPJ1234C",
+            aadhaar_number_masked="XXXX-XXXX-1234",
+            occupation="Software Engineer",
+            annual_income=95000.00,
+            address="123 Main St, New York, NY 10001"
         )
         c2 = Customer(
             id=uuid.UUID("22222222-2222-2222-2222-222222222222"),
@@ -119,7 +124,12 @@ async def seed_customer_data() -> None:
             email="sarah.j@yahoo.com",
             phone="+1-555-0142",
             kyc_status="APPROVED",
-            risk_score=0.85
+            risk_score=0.85,
+            pan_number="BCDQR5678D",
+            aadhaar_number_masked="XXXX-XXXX-5678",
+            occupation="Financial Analyst",
+            annual_income=120000.00,
+            address="456 Park Ave, Chicago, IL 60601"
         )
         c3 = Customer(
             id=uuid.UUID("33333333-3333-3333-3333-333333333333"),
@@ -128,7 +138,12 @@ async def seed_customer_data() -> None:
             email="mchang@techcorp.com",
             phone="+1-555-0177",
             kyc_status="APPROVED",
-            risk_score=0.45
+            risk_score=0.45,
+            pan_number="CEFST9012E",
+            aadhaar_number_masked="XXXX-XXXX-9012",
+            occupation="Business Owner",
+            annual_income=250000.00,
+            address="789 Tech Blvd, San Francisco, CA 94105"
         )
         c4 = Customer(
             id=uuid.UUID("44444444-4444-4444-4444-444444444444"),
@@ -137,7 +152,12 @@ async def seed_customer_data() -> None:
             email="amira.f@outlook.com",
             phone="+1-555-0121",
             kyc_status="PENDING",
-            risk_score=0.10
+            risk_score=0.10,
+            pan_number="DFGUV3456F",
+            aadhaar_number_masked="XXXX-XXXX-3456",
+            occupation="Consultant",
+            annual_income=75000.00,
+            address="321 Desert Rd, Dubai, UAE"
         )
         c5 = Customer(
             id=uuid.UUID("55555555-5555-5555-5555-555555555555"),
@@ -146,29 +166,34 @@ async def seed_customer_data() -> None:
             email="rkowalski@banking.pl",
             phone="+48-601-234-567",
             kyc_status="REJECTED",
-            risk_score=0.95
+            risk_score=0.95,
+            pan_number="EGHWX7890G",
+            aadhaar_number_masked="XXXX-XXXX-7890",
+            occupation="Unemployed",
+            annual_income=0.00,
+            address="99 Nowy Swiat, Warsaw, Poland"
         )
         session.add_all([c1, c2, c3, c4, c5])
         await session.flush()
         
-        # Add cases
+        # Add cases — Case model only has: id, alert_id, officer_id, notes, recommended_action, legal_reference, status
         case1 = Case(
             id=uuid.UUID("c1c1c1c1-1111-1111-1111-c1c1c1c1c1c1"),
-            customer_id=c2.id,
-            title="Suspicious Loop Transaction Pattern",
-            description="Sarah's account is exhibiting high risk metrics from automated transfer clusters.",
-            status="INVESTIGATING",
-            priority="CRITICAL",
-            assignee_id=None
+            alert_id=None,
+            officer_id=None,
+            notes="Sarah's account is exhibiting high risk metrics from automated transfer clusters.",
+            recommended_action="FREEZE_AND_INVESTIGATE",
+            legal_reference="FIU-IND/2024/001",
+            status="INVESTIGATING"
         )
         case2 = Case(
             id=uuid.UUID("c2c2c2c2-2222-2222-2222-c2c2c2c2c2c2"),
-            customer_id=c5.id,
-            title="Unusual Device Sign-in Geo-anomaly",
-            description="Robert's user account logged in from Warsaw IP and Singapore device fingerprint within 10 minutes.",
-            status="OPEN",
-            priority="HIGH",
-            assignee_id=None
+            alert_id=None,
+            officer_id=None,
+            notes="Robert's account logged in from Warsaw IP and Singapore device fingerprint within 10 minutes.",
+            recommended_action="ESCALATE_TO_COMPLIANCE",
+            legal_reference="FIU-IND/2024/002",
+            status="OPEN"
         )
         session.add_all([case1, case2])
         await session.commit()

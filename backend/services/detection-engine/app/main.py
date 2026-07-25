@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.api.v1.detection import router as detection_router
+from app.api.v1.models import router as models_router
 from shared.config import BaseAppSettings
 from shared.database import db_manager
 from shared.exceptions import register_exception_handlers
@@ -59,3 +60,4 @@ app.add_middleware(RequestLoggingMiddleware)
 register_exception_handlers(app)
 
 app.include_router(detection_router, prefix="/api/v1")
+app.include_router(models_router, prefix="/api/v1")

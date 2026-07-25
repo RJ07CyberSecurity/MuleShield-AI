@@ -22,6 +22,13 @@ export interface NetworkEdge {
   label?: string; // e.g. amount
   value?: number;
   type?: string;
+  details?: {
+    transactionId?: string;
+    senderName?: string;
+    receiverName?: string;
+    date?: string;
+    [key: string]: any;
+  };
 }
 
 export interface GraphData {

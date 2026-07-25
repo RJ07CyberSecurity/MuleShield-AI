@@ -21,6 +21,12 @@ class DetectionRequest(BaseModel):
     ingestion_id: str
 
 
+class FeedbackRequest(BaseModel):
+    account_id: str
+    is_true_positive: bool
+    notes: str | None = None
+
+
 class FlaggedAccountResponse(BaseModel):
     account_id: str
     account_number: str
@@ -72,6 +78,7 @@ async def get_90th_percentile_threshold(db: AsyncSession) -> Decimal:
 @router.post("/run")
 async def run_detection(
     payload: DetectionRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db_session)
 ) -> ResponseEnvelope[dict]:
     """
@@ -93,11 +100,14 @@ async def run_detection(
             detail=f"No confirmed transactions found for ingestion ID {payload.ingestion_id}."
         )
         
-    # 2. Get unique account numbers from this batch
+    # 2. Get unique account numbers and the latest timestamp from this batch
     acct_nums = set()
+    latest_time = None
     for t in batch_txs:
         acct_nums.add(t.sender_account)
         acct_nums.add(t.receiver_account)
+        if latest_time is None or t.timestamp > latest_time:
+            latest_time = t.timestamp
         
     # 3. Pull account models
     accts_stmt = select(Account).where(Account.account_number.in_(list(acct_nums)))
@@ -113,35 +123,53 @@ async def run_detection(
     # 4. Orchestrate risk scoring per account
     for acct_num, account in accounts.items():
         # 4.1 Compute rolling behavioral features
-        features = await FeatureEngineeringPipeline.compute_features_for_account(db, acct_num)
+        features = await FeatureEngineeringPipeline.compute_features_for_account(db, acct_num, ref_time=latest_time)
         
         # 4.2 Query Neo4j Graph Centrality and Linkage Loops
         linked_mule = False
+        linear_layering_detected = False
         graph_centrality = 0.0
         try:
-            driver = neo4j_manager.get_driver()
-            async with driver.session() as session:
-                # Degree Centrality (counterparty density metric)
-                centrality_query = (
-                    "MATCH (a:Account {number: $account_number}) "
-                    "OPTIONAL MATCH (a)-[r:TRANSFERRED_TO]-(other) "
-                    "RETURN count(distinct other) as degree"
-                )
-                c_res = await session.run(centrality_query, account_number=acct_num)
-                record = await c_res.single()
-                if record:
-                    # Degree counts mapping to proxy PageRank centrality
-                    graph_centrality = min(100.0, float(record["degree"] * 5))
-                    
-                # Loop Cycle Check
-                loop_query = (
-                    "MATCH p=(a:Account {number: $account_number})-[:TRANSFERRED_TO*2..5]->(a) "
-                    "RETURN length(p) as loop_length LIMIT 1"
-                )
-                l_res = await session.run(loop_query, account_number=acct_num)
-                l_rec = await l_res.single()
-                if l_rec:
-                    linked_mule = True
+            from shared.config import BaseAppSettings
+            if BaseAppSettings().USE_SQLITE:
+                graph_centrality = 25.0
+                linked_mule = False
+                linear_layering_detected = False
+            else:
+                driver = neo4j_manager.get_driver()
+                async with driver.session() as session:
+                    # Degree Centrality (counterparty density metric)
+                    centrality_query = (
+                        "MATCH (a:Account {number: $account_number}) "
+                        "OPTIONAL MATCH (a)-[r:TRANSFERRED_TO]-(other) "
+                        "RETURN count(distinct other) as degree"
+                    )
+                    c_res = await session.run(centrality_query, account_number=acct_num)
+                    record = await c_res.single()
+                    if record:
+                        # Degree counts mapping to proxy PageRank centrality
+                        graph_centrality = min(100.0, float(record["degree"] * 5))
+                        
+                    # Loop Cycle Check
+                    loop_query = (
+                        "MATCH p=(a:Account {number: $account_number})-[:TRANSFERRED_TO*2..5]->(a) "
+                        "RETURN length(p) as loop_length LIMIT 1"
+                    )
+                    l_res = await session.run(loop_query, account_number=acct_num)
+                    l_rec = await l_res.single()
+                    if l_rec:
+                        linked_mule = True
+
+                    # Linear Layering Check (A->B->C->...)
+                    linear_query = (
+                        "MATCH p=(a:Account {number: $account_number})-[:TRANSFERRED_TO*3..5]->(d) "
+                        "WHERE a <> d "
+                        "RETURN length(p) as path_length LIMIT 1"
+                    )
+                    lin_res = await session.run(linear_query, account_number=acct_num)
+                    lin_rec = await lin_res.single()
+                    if lin_rec:
+                        linear_layering_detected = True
         except Exception as ge:
             logger.warning("Neo4j engine connection not active, skipping graph calculations", error=str(ge))
 
@@ -190,7 +218,23 @@ async def run_detection(
             
         # Rule 10: Linked to known mule account (graph)
         if linked_mule:
-            rule_factors.append({"rule": "R10_GRAPH_MULE_LINK", "reason": "Account is linked in close proximity to a known mule account or circular loop in Neo4j network graph.", "weight": 40})
+            rule_factors.append({"rule": "R10_GRAPH_MULE_LINK", "reason": "Account is linked in close proximity to a known mule account or circular loop in Neo4j network graph.", "weight": 80})
+
+        # Rule 10b: Linear Layering Detected (graph)
+        if linear_layering_detected:
+            rule_factors.append({"rule": "R10B_GRAPH_LINEAR_LAYERING", "reason": "Account is part of a multi-hop linear layering chain (A->B->C) to obscure fund origin.", "weight": 70})
+
+        # Rule 11: High-Value SWIFT Smurfing
+        if features.get("swift_outgoing_amt_24h", 0.0) >= 30000.0:
+            rule_factors.append({"rule": "R11_HIGH_VALUE_SWIFT_SMURFING", "reason": "Detected massive outgoing SWIFT transfers in a 24-hour period.", "weight": 80})
+
+        # Rule 12: P2P Rapid Fan-Out
+        if features.get("p2p_txn_count_24h", 0) >= 5 and features.get("unique_receivers_30d", 0) >= 5:
+            rule_factors.append({"rule": "R12_P2P_RAPID_FAN_OUT", "reason": "High frequency of P2P transfers dispersed to multiple unique receivers rapidly.", "weight": 80})
+
+        # Rule 13: ACH Frequent Small Transfers
+        if features.get("ach_txn_count_24h", 0) >= 6 and features.get("unique_receivers_30d", 0) >= 6:
+            rule_factors.append({"rule": "R13_ACH_FREQUENT_SMALL_TRANSFERS", "reason": "Unusual volume of small ACH outgoing transfers to multiple receivers.", "weight": 80})
 
         # Calculate rule base score
         rule_score = min(100.0, sum(f["weight"] for f in rule_factors))
@@ -201,6 +245,12 @@ async def run_detection(
         # 4.5 Orchestrated Final Score
         # 50% Rule Engine + 30% ML Inference + 20% Graph PageRank Centrality
         final_score = int(round(0.5 * rule_score + 0.3 * (ml_prob * 100) + 0.2 * graph_centrality))
+        
+        # Override: If any critical rule is triggered, guarantee CRITICAL risk band (score >= 85)
+        critical_rule_triggered = any(f["weight"] >= 80 for f in rule_factors)
+        if critical_rule_triggered:
+            final_score = max(final_score, 85)
+            
         final_score = min(100, max(0, final_score))
 
         # Map to Risk Bands
@@ -231,6 +281,7 @@ async def run_detection(
         
         new_score = RiskScore(
             id=uuid.uuid4(),
+            owner_id=account.owner_id,
             account_id=account.id,
             rule_score=float(rule_score),
             ml_probability=float(ml_prob),
@@ -266,8 +317,11 @@ async def run_detection(
             else:
                 new_alert = Alert(
                     id=uuid.uuid4(),
+                    owner_id=account.owner_id,
                     account_id=account.id,
                     risk_score_id=new_score.id,
+                    alert_type="VELOCITY_SPIKE" if features.get("txn_count_24h", 0) > 30 else "MULE_TRANSIT",
+                    severity=severity,
                     status="NEW",
                     trigger_reason=reason_details,
                     score=float(final_score),
@@ -287,7 +341,8 @@ async def run_detection(
             "ingestion_id": payload.ingestion_id,
             "accounts_analyzed": len(accounts),
             "alerts_triggered": alert_count
-        }
+        },
+        request_id=request.state.request_id
     )
 
 
@@ -301,6 +356,14 @@ async def list_flagged_accounts(
     Returns ranked accounts flagged during compliance screening, sorted by risk score.
     """
     logger.info("Listing flagged accounts", ingestion_id=ingestion_id)
+    owner_id = request.headers.get("x-user-id")
+    if not owner_id:
+        return ResponseEnvelope(
+            success=True,
+            message="Flagged accounts retrieved.",
+            data=[],
+            request_id=request.state.request_id
+        )
     
     # Query accounts that have alerts
     # If ingestion_id is provided, limit to accounts that have transactions in that ingestion batch
@@ -309,6 +372,8 @@ async def list_flagged_accounts(
             Transaction.ingestion_id == ingestion_id,
             Transaction.status == "CONFIRMED"
         )
+        if owner_id:
+            tx_stmt = tx_stmt.where(Transaction.owner_id == owner_id)
         tx_res = await db.execute(tx_stmt)
         rows = tx_res.all()
         acct_nums = set()
@@ -320,7 +385,8 @@ async def list_flagged_accounts(
             return ResponseEnvelope(
                 success=True,
                 message="No flagged accounts found for this ingestion.",
-                data=[]
+                data=[],
+                request_id=request.state.request_id
             )
             
         accts_stmt = select(Account).where(Account.account_number.in_(list(acct_nums)))
@@ -331,7 +397,8 @@ async def list_flagged_accounts(
             return ResponseEnvelope(
                 success=True,
                 message="No flagged accounts found for this ingestion.",
-                data=[]
+                data=[],
+                request_id=request.state.request_id
             )
             
         alert_stmt = select(Alert, Account, RiskScore).join(
@@ -341,7 +408,9 @@ async def list_flagged_accounts(
         ).where(
             Alert.account_id.in_(acct_ids),
             Alert.status != "CLOSED_FALSE_POSITIVE"
-        ).order_by(RiskScore.final_score.desc())
+        )
+        alert_stmt = alert_stmt.where(Alert.owner_id == owner_id)
+        alert_stmt = alert_stmt.order_by(RiskScore.final_score.desc())
     else:
         alert_stmt = select(Alert, Account, RiskScore).join(
             Account, Alert.account_id == Account.id
@@ -349,37 +418,87 @@ async def list_flagged_accounts(
             RiskScore, Alert.risk_score_id == RiskScore.id
         ).where(
             Alert.status != "CLOSED_FALSE_POSITIVE"
-        ).order_by(RiskScore.final_score.desc())
+        )
+        alert_stmt = alert_stmt.where(Alert.owner_id == owner_id)
+        alert_stmt = alert_stmt.order_by(RiskScore.final_score.desc())
         
     res = await db.execute(alert_stmt)
     results = res.all()
-    
-    flagged = []
-    
+
+    # Deduplicate by account_id — keep only the highest-scoring entry per account.
+    # An account can have multiple Alert rows; the JOIN produces one row per alert,
+    # causing duplicate React keys on the frontend.
+    seen: dict[str, FlaggedAccountResponse] = {}
+
     for alert, account, risk_score in results:
-        factors = []
+        acct_id = str(account.id)
         final_score = int(risk_score.final_score) if risk_score else 0
         severity = risk_score.risk_band if risk_score else "LOW"
-        
+
         if risk_score and risk_score.explainability_payload:
             factors = risk_score.explainability_payload.get("factors", [])
         else:
             factors = [{"rule": "UNKNOWN", "reason": "No factors available", "weight": final_score}]
-            
-        flagged.append(FlaggedAccountResponse(
-            account_id=str(account.id),
-            account_number=account.account_number,
-            risk_score=final_score,
-            severity=severity,
-            factors=factors,
-            balance=float(account.balance),
-            currency="USD",
-            status=account.status
-        ))
-        
+
+        # Only add/replace if this entry has a higher score than an already-seen one
+        if acct_id not in seen or final_score > seen[acct_id].risk_score:
+            seen[acct_id] = FlaggedAccountResponse(
+                account_id=acct_id,
+                account_number=account.account_number,
+                risk_score=final_score,
+                severity=severity,
+                factors=factors,
+                balance=float(account.balance),
+                currency="USD",
+                status=account.status
+            )
+
+    flagged = list(seen.values())
+
     return ResponseEnvelope(
         success=True,
         message="Flagged accounts retrieved.",
         data=flagged,
+        request_id=request.state.request_id
+    )
+
+from shared.database.models import ModelFeedback
+
+@router.post("/feedback")
+async def submit_feedback(
+    payload: FeedbackRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session)
+) -> ResponseEnvelope[dict]:
+    """
+    Captures human-in-the-loop feedback to label whether a flagged account is a true positive or false positive.
+    """
+    logger.info("Received model feedback", account_id=payload.account_id, is_true_positive=payload.is_true_positive)
+    
+    # 1. Store the feedback
+    feedback = ModelFeedback(
+        account_id=payload.account_id,
+        is_true_positive=payload.is_true_positive,
+        notes=payload.notes
+    )
+    db.add(feedback)
+    
+    # 2. Update Alert status if it's a false positive
+    if not payload.is_true_positive:
+        stmt = select(Alert).where(Alert.account_id == payload.account_id, Alert.status != "CLOSED_FALSE_POSITIVE")
+        res = await db.execute(stmt)
+        alerts = res.scalars().all()
+        for alert in alerts:
+            alert.status = "CLOSED_FALSE_POSITIVE"
+            alert.updated_at = datetime.utcnow()
+            
+    await db.commit()
+    
+    # 3. (Placeholder) Trigger background job to retrain ML models 
+    
+    return ResponseEnvelope(
+        success=True,
+        message="Feedback successfully recorded for retraining.",
+        data={"account_id": payload.account_id, "is_true_positive": payload.is_true_positive},
         request_id=request.state.request_id
     )

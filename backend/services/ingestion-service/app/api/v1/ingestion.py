@@ -8,9 +8,9 @@ import pandas as pd
 import pdfplumber
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException, status, Form, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 from shared.database import get_db_session, Base, Transaction, Account, Alert, Customer, KYCRecord
@@ -39,6 +39,69 @@ class SummaryResponse(BaseModel):
     flagged_accounts_count: int
 
 
+def parse_excel(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
+    valid = []
+    invalid = []
+    
+    try:
+        df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+        df.columns = [str(col).strip().lower().replace(" ", "_") for col in df.columns]
+        df = df.where(pd.notnull(df), None)
+        
+        # Verify required fields
+        required = ["sender_account", "receiver_account", "amount", "timestamp"]
+        missing = [col for col in required if col not in df.columns]
+        if missing:
+            raise ValueError(f"Missing required columns: {', '.join(missing)}")
+            
+        for index, row in df.iterrows():
+            row_dict = row.to_dict()
+            try:
+                s_val = row_dict.get("sender_account")
+                r_val = row_dict.get("receiver_account")
+                
+                sender = "" if s_val is None or pd.isna(s_val) or str(s_val).strip() == "" or str(s_val).lower() == "nan" else str(s_val).strip()
+                receiver = "" if r_val is None or pd.isna(r_val) or str(r_val).strip() == "" or str(r_val).lower() == "nan" else str(r_val).strip()
+                
+                if not sender or not receiver:
+                    raise ValueError("Sender and receiver accounts are required and cannot be empty.")
+                
+                amt_str = str(row_dict.get("amount") or "0").replace("$", "").replace(",", "").strip()
+                amount = Decimal(amt_str)
+                if amount <= 0:
+                    raise ValueError("Transaction amount must be greater than zero.")
+                
+                ts_str = str(row_dict.get("timestamp") or "").strip()
+                try:
+                    timestamp = pd.to_datetime(ts_str).to_pydatetime()
+                except Exception:
+                    timestamp = datetime.fromisoformat(ts_str)
+                
+                record = {
+                    "sender_account": sender,
+                    "receiver_account": receiver,
+                    "amount": amount,
+                    "currency": str(row_dict.get("currency") or "USD").strip().upper(),
+                    "timestamp": timestamp,
+                    "transaction_type": str(row_dict.get("transaction_type") or "TRANSFER").strip().upper(),
+                    "payment_channel": str(row_dict.get("payment_channel") or "ACH").strip().upper(),
+                    "ifsc": str(row_dict.get("ifsc")).strip() if row_dict.get("ifsc") else None,
+                    "bank_name": str(row_dict.get("bank_name")).strip() if row_dict.get("bank_name") else None,
+                    "branch": str(row_dict.get("branch")).strip() if row_dict.get("branch") else None,
+                    "beneficiary": str(row_dict.get("beneficiary") or receiver).strip(),
+                    "purpose": str(row_dict.get("purpose")).strip() if row_dict.get("purpose") else None,
+                    "transaction_id": str(row_dict.get("transaction_id")).strip() if row_dict.get("transaction_id") else None,
+                }
+                valid.append(record)
+            except Exception as e:
+                invalid.append({"row": index + 2, "data": row_dict, "reason": str(e)})
+                
+    except Exception as e:
+        raise ValueError(f"Excel Parse Exception: {str(e)}")
+        
+    return valid, invalid
+
+
 def parse_csv(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
     valid = []
     invalid = []
@@ -50,6 +113,7 @@ def parse_csv(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
         except Exception:
             df = pd.read_csv(io.BytesIO(file_bytes), encoding="latin-1")
             
+        df.columns = [str(col).strip().lower().replace(" ", "_") for col in df.columns]
         df = df.where(pd.notnull(df), None)
         
         # Verify required fields
@@ -145,6 +209,269 @@ def _parse_date(val: str) -> datetime | None:
 
 
 def parse_pdf(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
+    valid = []
+    invalid = []
+
+    try:
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            all_text = ""
+            all_tables = []
+
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    all_text += text + "\n"
+                tables = page.extract_tables()
+                if tables:
+                    all_tables.extend(tables)
+
+            # ── Step 1: Extract the owner's account number from header text ──
+            owner_account = "UNKNOWN"
+            ac_patterns = [
+                r"A[/]?C\s*(?:No|Number|Num)[^:]*:\s*([A-Za-z0-9-]{6,35})",
+                r"Account\s*(?:No|Number|Num)[^:]*:\s*([A-Za-z0-9-]{6,35})",
+                r"Savings\s+A[/]?C[^:]*:\s*([A-Za-z0-9-]{6,35})",
+                r"Current\s+A[/]?C[^:]*:\s*([A-Za-z0-9-]{6,35})",
+                r"Account\s+Number[^:]*:\s*([A-Za-z0-9Xx*-]{6,35})",
+            ]
+            for pat in ac_patterns:
+                m = re.search(pat, all_text, re.IGNORECASE)
+                if m:
+                    owner_account = m.group(1).strip()
+                    break
+
+            # ── Step 2: Try table parsing with Indian bank statement awareness ──
+            for table in all_tables:
+                if not table or len(table) < 2:
+                    continue
+
+                header = [str(cell or "").lower().strip() for cell in table[0]]
+
+                # Detect column indices for Indian bank statement format
+                date_idx    = next((i for i, h in enumerate(header) if "date" in h or "value dt" in h), -1)
+                narr_idx    = next((i for i, h in enumerate(header) if "narration" in h or "description" in h or "particulars" in h or "remark" in h or "purpose" in h), -1)
+                debit_idx   = next((i for i, h in enumerate(header) if h in ("debit", "dr", "withdrawal", "debit amount", "debit (dr.)")), -1)
+                credit_idx  = next((i for i, h in enumerate(header) if h in ("credit", "cr", "deposit", "credit amount", "credit (cr.)")), -1)
+                amount_idx  = next((i for i, h in enumerate(header) if "amount" in h and debit_idx == -1), -1)
+                type_idx    = next((i for i, h in enumerate(header) if h in ("type", "transaction type", "dr/cr", "cr/dr", "txn type")), -1)
+                balance_idx = next((i for i, h in enumerate(header) if "balance" in h), -1)
+                ref_idx     = next((i for i, h in enumerate(header) if "ref" in h or "chq" in h or "cheque" in h or "txn id" in h), -1)
+                
+                # Explicit sender/receiver columns (some synthetic or clean formats)
+                sender_idx   = next((i for i, h in enumerate(header) if "sender" == h), -1)
+                receiver_idx = next((i for i, h in enumerate(header) if "receiver" == h), -1)
+
+                is_indian_format = debit_idx != -1 or credit_idx != -1
+
+                for r_idx, row in enumerate(table[1:]):
+                    if not row or all(c is None or str(c).strip() == "" for c in row):
+                        continue
+                    try:
+                        # ── Date ────────────────────────────────────────────
+                        ts_str = str(row[date_idx] or "").strip() if date_idx != -1 else ""
+                        try:
+                            timestamp = pd.to_datetime(ts_str, dayfirst=True).to_pydatetime()
+                        except Exception:
+                            timestamp = datetime.utcnow()
+
+                        # ── Amount ───────────────────────────────────────────
+                        debit_val  = 0.0
+                        credit_val = 0.0
+
+                        if is_indian_format:
+                            if debit_idx != -1:
+                                raw = str(row[debit_idx] or "").replace(",", "").replace("₹", "").strip()
+                                debit_val = float(raw) if raw and raw not in ("-", "") else 0.0
+                            if credit_idx != -1:
+                                raw = str(row[credit_idx] or "").replace(",", "").replace("₹", "").strip()
+                                credit_val = float(raw) if raw and raw not in ("-", "") else 0.0
+                        elif amount_idx != -1:
+                            raw = str(row[amount_idx] or "0").replace(",", "").replace("₹", "").replace("$", "").strip()
+                            try:
+                                val = float(raw)
+                                if type_idx != -1:
+                                    txn_type_str = str(row[type_idx] or "").strip().lower()
+                                    if "dr" in txn_type_str or "debit" in txn_type_str or "withdrawal" in txn_type_str:
+                                        debit_val = abs(val)
+                                    else:
+                                        credit_val = abs(val)
+                                else:
+                                    if val < 0:
+                                        debit_val = abs(val)
+                                    else:
+                                        credit_val = val
+                            except ValueError:
+                                continue
+
+                        amount = debit_val if debit_val > 0 else credit_val
+                        if amount <= 0:
+                            continue
+
+                        # ── Narration → counterparty extraction ─────────────
+                        narration = str(row[narr_idx] or "").strip() if narr_idx != -1 else ""
+                        ref_id = str(row[ref_idx] or "").strip() if ref_idx != -1 else None
+
+                        # ── Sender / Receiver based on Debit vs Credit ───────
+                        if debit_val > 0:
+                            txn_type = "DEBIT"
+                        else:
+                            txn_type = "CREDIT"
+                            
+                        # If explicit sender/receiver columns exist, use them
+                        if sender_idx != -1 and receiver_idx != -1:
+                            sender_account = str(row[sender_idx] or "").strip()
+                            receiver_account = str(row[receiver_idx] or "").strip()
+                        else:
+                            counterparty = _extract_counterparty(narration) or narration[:40] or "UNKNOWN"
+                            if txn_type == "DEBIT":
+                                # Outgoing: owner is sender
+                                sender_account   = owner_account
+                                receiver_account = counterparty
+                            else:
+                                # Incoming: owner is receiver
+                                sender_account   = counterparty
+                                receiver_account = owner_account
+
+                        valid.append({
+                            "sender_account":   sender_account,
+                            "receiver_account": receiver_account,
+                            "amount":           Decimal(str(amount)),
+                            "currency":         "INR",
+                            "timestamp":        timestamp,
+                            "transaction_type": txn_type,
+                            "payment_channel":  _detect_channel(narration),
+                            "ifsc":             None,
+                            "bank_name":        None,
+                            "branch":           None,
+                            "beneficiary":      receiver_account,
+                            "purpose":          narration[:100] if narration else None,
+                            "transaction_id":   ref_id,
+                        })
+
+                    except Exception as e:
+                        invalid.append({"row": r_idx + 2, "data": row, "reason": str(e)})
+
+            # ── Step 3: Text fallback if no tables yielded results ───────────
+            if not valid:
+                valid, invalid = _parse_pdf_text_fallback(all_text, owner_account)
+
+    except Exception as e:
+        raise ValueError(f"PDF Parse Exception: {str(e)}")
+
+    return valid, invalid
+
+
+def _extract_counterparty(narration: str) -> str:
+    """
+    Extracts the counterparty account number or UPI ID from a bank narration string.
+    Handles UPI, NEFT, IMPS, RTGS, NACH, ATM formats from Indian banks.
+    """
+    if not narration:
+        return ""
+
+    # UPI patterns: UPI-Credit-VPA or UPI-Debit-mobile-NAME
+    m = re.search(r"UPI[/-](?:Credit|Debit)[/-]([\w@.]+)[/-]", narration, re.IGNORECASE)
+    if m:
+        return m.group(1)
+
+    # VPA (virtual payment address): something@upi / something@bank
+    m = re.search(r"([\w.\-]+@[\w]+)", narration)
+    if m:
+        return m.group(1)
+
+    # NEFT/IMPS/RTGS: usually contains account number embedded in narration
+    m = re.search(r"(?:NEFT|IMPS|RTGS)[/-]?.*?([A-Z0-9]{10,20})", narration, re.IGNORECASE)
+    if m:
+        return m.group(1)
+
+    # Numeric account number: 9–18 digit sequence
+    m = re.search(r"\b(\d{9,18})\b", narration)
+    if m:
+        return m.group(1)
+
+    # Fallback: take the first meaningful word chunk (skip generic words)
+    skip = {"credit", "debit", "neft", "imps", "rtgs", "upi", "nach", "atm", "by", "to", "from", "for"}
+    words = [w for w in re.split(r"[\s/\-]+", narration) if w.lower() not in skip and len(w) > 3]
+    return words[0][:40] if words else narration[:40]
+
+
+def _detect_channel(narration: str) -> str:
+    """Maps narration text to a payment channel code."""
+    n = narration.upper()
+    if "UPI" in n:    return "UPI"
+    if "NEFT" in n:   return "NEFT"
+    if "IMPS" in n:   return "IMPS"
+    if "RTGS" in n:   return "RTGS"
+    if "NACH" in n:   return "NACH"
+    if "ATM" in n:    return "ATM"
+    if "POS" in n:    return "POS"
+    if "CHQ" in n or "CHEQUE" in n: return "CHEQUE"
+    return "TRANSFER"
+
+
+def _parse_pdf_text_fallback(all_text: str, owner_account: str) -> tuple[list[dict], list[dict]]:
+    """Regex-based line-by-line parser for PDFs where table extraction fails."""
+    valid, invalid = [], []
+    lines = all_text.split("\n")
+
+    for line_idx, line in enumerate(lines):
+        line = line.strip()
+        if not line:
+            continue
+
+        date_match = re.search(
+            r"(\d{2}[/-]\d{2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{2}\s+[a-zA-Z]{3}\s+'?\d{2,4})", line
+        )
+        if not date_match:
+            continue
+
+        # Try to find debit/credit amount
+        amounts = re.findall(r"(?:₹|Rs\.?|INR)?\s*([\d,]+(?:\.\d{1,2})?)", line)
+        if not amounts:
+            continue
+
+        try:
+            amount = Decimal(amounts[0].replace(",", ""))
+            if amount <= 0:
+                continue
+
+            date_str = date_match.group(1).replace("'", "20")
+            try:
+                timestamp = pd.to_datetime(date_str, dayfirst=True).to_pydatetime()
+            except Exception:
+                timestamp = datetime.utcnow()
+
+            # Detect direction
+            is_debit = bool(re.search(r"\b(dr|debit|withdrawal|paid|transfer out)\b", line, re.IGNORECASE))
+
+            counterparty = _extract_counterparty(
+                line.replace(date_match.group(1), "").replace(amounts[0], "").strip()
+            ) or "UNKNOWN"
+
+            if is_debit:
+                sender_account, receiver_account, txn_type = owner_account, counterparty, "DEBIT"
+            else:
+                sender_account, receiver_account, txn_type = counterparty, owner_account, "CREDIT"
+
+            valid.append({
+                "sender_account":   sender_account,
+                "receiver_account": receiver_account,
+                "amount":           amount,
+                "currency":         "INR",
+                "timestamp":        timestamp,
+                "transaction_type": txn_type,
+                "payment_channel":  _detect_channel(line),
+                "ifsc":             None,
+                "bank_name":        None,
+                "branch":           None,
+                "beneficiary":      receiver_account,
+                "purpose":          line[:100],
+                "transaction_id":   None,
+            })
+        except Exception as e:
+            invalid.append({"row": line_idx + 1, "data": line, "reason": str(e)})
+
+    return valid, invalid
     valid = []
     invalid = []
 
@@ -347,12 +674,14 @@ def parse_pdf(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
 async def upload_statement(
     request: Request,
     file: UploadFile = File(...),
+    uploader_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db_session)
 ) -> ResponseEnvelope[dict]:
     """
     Ingests and parses a statement (CSV/PDF), validates fields, staging them pending analyst confirm.
     """
     logger.info("Received statement file upload request", filename=file.filename)
+    owner_id = request.headers.get("x-user-id")
     
     # Read size check
     contents = await file.read()
@@ -371,12 +700,14 @@ async def upload_statement(
     try:
         if filename.endswith(".csv"):
             valid_rows, invalid_rows = parse_csv(contents)
+        elif filename.endswith(".xlsx"):
+            valid_rows, invalid_rows = parse_excel(contents)
         elif filename.endswith(".pdf"):
             valid_rows, invalid_rows = parse_pdf(contents)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Unsupported statement format. Upload only CSV or PDF format Statements."
+                detail="Unsupported statement format. Upload only CSV, XLSX, or PDF format Statements."
             )
     except Exception as exc:
         logger.error("Failed parsing statement statement", error=str(exc))
@@ -400,25 +731,36 @@ async def upload_statement(
         )
 
     # Compute fingerprints and run deduplication check
-    ingestion_id = str(uuid.uuid4())
+    base_uuid = str(uuid.uuid4())
+    actual_owner_id = owner_id or uploader_id
+    ingestion_id = f"{actual_owner_id}_{base_uuid}" if actual_owner_id else base_uuid
     
     # Pre-calculate fingerprints
     for row in valid_rows:
-        fp_raw = f"{row['sender_account']}:{row['receiver_account']}:{float(row['amount'])}:{row['currency']}:{row['timestamp'].isoformat()}"
+        fp_raw = f"{actual_owner_id}:{row['sender_account']}:{row['receiver_account']}:{float(row['amount'])}:{row['currency']}:{row['timestamp'].isoformat()}"
         row["fingerprint"] = hashlib.sha256(fp_raw.encode()).hexdigest()
+        # Prefix transaction_id with owner_id to avoid DB unique constraint violations across users
+        if row.get("transaction_id"):
+            row["transaction_id"] = f"{actual_owner_id}_{row['transaction_id']}"
 
     tx_ids = [r["transaction_id"] for r in valid_rows if r["transaction_id"]]
     fingerprints = [r["fingerprint"] for r in valid_rows]
     
     # Query database for existing matches
     stmt = select(Transaction.transaction_id, Transaction.fingerprint).where(
-        or_(
-            Transaction.transaction_id.in_(tx_ids) if tx_ids else False,
-            Transaction.fingerprint.in_(fingerprints)
+        and_(
+            or_(
+                Transaction.transaction_id.in_(tx_ids) if tx_ids else False,
+                Transaction.fingerprint.in_(fingerprints)
+            ),
+            Transaction.owner_id == actual_owner_id
         )
     )
     result = await db.execute(stmt)
     matches = result.all()
+    
+    with open("e:/debug.txt", "a") as f:
+        f.write(f"Matches for {actual_owner_id}: {matches}\n")
     
     matched_ids = {m[0] for m in matches if m[0]}
     matched_fps = {m[1] for m in matches if m[1]}
@@ -470,6 +812,7 @@ async def upload_statement(
             "purpose": row.get("purpose"),
             "status": "STAGED",
             "fingerprint": row["fingerprint"],
+            "owner_id": actual_owner_id,
         }
         
         try:
@@ -531,10 +874,13 @@ async def confirm_ingestion(
     """
     logger.info("Confirming ingestion batch", ingestion_id=ingestion_id)
     
+    owner_id = request.headers.get("x-user-id")
+    
     # 1. Fetch all staged transactions
     stmt = select(Transaction).where(
         Transaction.ingestion_id == ingestion_id,
-        Transaction.status == "STAGED"
+        Transaction.status == "STAGED",
+        Transaction.owner_id == owner_id
     )
     res = await db.execute(stmt)
     txs = list(res.scalars().all())
@@ -550,21 +896,22 @@ async def confirm_ingestion(
     for t in txs:
         if t.sender_account not in unique_accts:
             unique_accts[t.sender_account] = {
-                "currency": t.currency,
                 "ifsc": t.ifsc or "MSAI0000101",
                 "bank_name": t.bank_name or "MuleShield Mock Bank",
                 "branch": t.branch or "Compliance Branch"
             }
         if t.receiver_account not in unique_accts:
             unique_accts[t.receiver_account] = {
-                "currency": t.currency,
                 "ifsc": t.ifsc or "MSAI0000101",
                 "bank_name": t.bank_name or "MuleShield Mock Bank",
                 "branch": t.branch or "Compliance Branch"
             }
         
     for acct_num, details in unique_accts.items():
-        acct_stmt = select(Account).where(Account.account_number == acct_num)
+        acct_stmt = select(Account).where(
+            Account.account_number == acct_num,
+            Account.owner_id == owner_id
+        )
         acct_res = await db.execute(acct_stmt)
         acct = acct_res.scalars().first()
         
@@ -580,8 +927,8 @@ async def confirm_ingestion(
                 branch=details["branch"],
                 account_type="CHECKING",
                 balance=Decimal("25000.00"),  # Default opening mockup balance
-                currency=details["currency"],
-                status="ACTIVE"
+                status="ACTIVE",
+                owner_id=owner_id
             )
             db.add(new_acct)
             
@@ -640,11 +987,19 @@ async def get_ingestion_summary(
     """
     logger.info("Compiling ingestion batch summaries", ingestion_id=ingestion_id)
     
-    # 1. Fetch confirmed transactions count & aggregate values
+    owner_id = request.headers.get("x-user-id")
+    if not owner_id:
+        return ResponseEnvelope(
+            success=False,
+            message="Unauthorized",
+            data={},
+            request_id=request.state.request_id
+        )
+
+    # 1. Fetch transactions count & aggregate values
     tx_stmt = select(Transaction).where(
-        Transaction.ingestion_id == ingestion_id,
-        Transaction.status == "CONFIRMED"
-    )
+        Transaction.ingestion_id == ingestion_id
+    ).where(Transaction.owner_id == owner_id)
     res = await db.execute(tx_stmt)
     txs = list(res.scalars().all())
     
@@ -739,6 +1094,61 @@ class TransactionIngest(BaseModel):
 class TransactionBatchIngestRequest(BaseModel):
     transactions: list[TransactionIngest]
     confirm: bool = False
+
+
+
+class IngestionListItem(BaseModel):
+    ingestion_id: str
+    transaction_count: int
+    total_volume: float
+    status: str
+    uploaded_at: str
+
+
+@router.get("/list", response_model=ResponseEnvelope[list[IngestionListItem]])
+async def list_ingestions(
+    request: Request,
+    uploader_id: str | None = Query(None),
+    db: AsyncSession = Depends(get_db_session),
+) -> ResponseEnvelope[list[IngestionListItem]]:
+    """
+    Returns a list of all past ingestion batches, sorted newest-first.
+    Each row includes the ingestion_id, transaction count, total volume, status, and earliest timestamp.
+    """
+    stmt = select(
+        Transaction.ingestion_id,
+        func.count(Transaction.id).label("tx_count"),
+        func.sum(Transaction.amount).label("total_volume"),
+        func.max(Transaction.status).label("status"),
+        func.min(Transaction.timestamp).label("uploaded_at"),
+    ).where(
+        Transaction.ingestion_id.isnot(None)
+    )
+    if uploader_id:
+        stmt = stmt.where(Transaction.ingestion_id.like(f"{uploader_id}_%"))
+        
+    stmt = stmt.group_by(Transaction.ingestion_id).order_by(func.min(Transaction.timestamp).desc())
+
+    res = await db.execute(stmt)
+    rows = res.all()
+
+    items = [
+        IngestionListItem(
+            ingestion_id=str(r.ingestion_id),
+            transaction_count=r.tx_count,
+            total_volume=float(r.total_volume or 0),
+            status=r.status or "CONFIRMED",
+            uploaded_at=r.uploaded_at.isoformat() if r.uploaded_at else "",
+        )
+        for r in rows
+    ]
+
+    return ResponseEnvelope(
+        success=True,
+        message=f"{len(items)} ingestion batches found.",
+        data=items,
+        request_id=request.state.request_id,
+    )
 
 
 ingest_router = APIRouter(prefix="/ingest", tags=["Ingest"])
@@ -923,3 +1333,346 @@ async def ingest_transaction_batch(
         },
         request_id=request.state.request_id
     )
+
+
+@router.get("/transactions/{id}")
+async def get_transaction(
+    request: Request,
+    id: str,
+    db: AsyncSession = Depends(get_db_session)
+) -> ResponseEnvelope[dict]:
+    """
+    Returns rich dynamic profile of a single transaction by ID or transaction_id.
+    """
+    import uuid
+    from sqlalchemy.orm import selectinload
+
+    # Try matching by primary key (UUID) first, else by transaction_id
+    stmt = select(Transaction)
+    try:
+        tx_uuid = uuid.UUID(id)
+        stmt = stmt.where(Transaction.id == tx_uuid)
+    except ValueError:
+        stmt = stmt.where(Transaction.transaction_id == id)
+
+    res = await db.execute(stmt)
+    tx = res.scalars().first()
+
+    if not tx:
+        return ResponseEnvelope(success=False, message="Transaction not found", data={})
+
+    # Simulate basic risk scores for sender/receiver based on the same logic in alert.py
+    sender_risk = 30
+    receiver_risk = 30
+    flags = []
+    
+    if float(tx.amount) > 10000:
+        flags.append("High value transfer detected.")
+    if float(tx.amount) >= 9900 and float(tx.amount) < 10000:
+        flags.append("Amount just under reporting threshold (potential structuring).")
+    if tx.receiver_account.lower().startswith("mule"):
+        flags.append("Receiver account flagged as high-risk Mule Node.")
+        receiver_risk = 94
+
+    history = [
+        {"time": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC"), "event": "Transfer initiated by sender."}
+    ]
+    if flags:
+        history.append({"time": (tx.timestamp).strftime("%Y-%m-%d %H:%M:%S UTC"), "event": f"Automated fraud scan triggered ({len(flags)} flags)."})
+        history.append({"time": (tx.timestamp).strftime("%Y-%m-%d %H:%M:%S UTC"), "event": "Transaction paused for heuristic evaluation."})
+    history.append({"time": (tx.timestamp).strftime("%Y-%m-%d %H:%M:%S UTC"), "event": f"Transaction status updated to {tx.status}."})
+
+    return ResponseEnvelope(
+        success=True,
+        message="Transaction details retrieved.",
+        data={
+            "id": tx.transaction_id or str(tx.id),
+            "date": tx.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "amount": f"${float(tx.amount):,.2f}",
+            "status": tx.status,
+            "sender": {
+                "id": f"ACC-{tx.sender_account}",
+                "name": "Unknown Sender",
+                "bank": tx.bank_name or "MuleShield First National",
+                "riskScore": sender_risk
+            },
+            "receiver": {
+                "id": f"ACC-{tx.receiver_account}",
+                "name": tx.beneficiary or "Unknown Receiver",
+                "bank": tx.bank_name or "Global Trust Bank",
+                "riskScore": receiver_risk
+            },
+            "flags": flags,
+            "history": history
+        },
+        request_id=request.state.request_id
+    )
+
+
+@router.get("/timeline")
+async def get_transaction_timeline(
+    request: Request,
+    ingestion_id: str | None = None,
+    time_range: str = "24H",
+    db: AsyncSession = Depends(get_db_session)
+) -> ResponseEnvelope[list[dict]]:
+    """
+    Returns transaction velocity grouped by time range.
+    If ingestion_id is provided, only transactions from that batch are counted.
+    """
+    from sqlalchemy import case as sa_case, Integer
+    from datetime import datetime, timedelta, timezone
+
+    # Build base filter
+    owner_id = request.headers.get("x-user-id")
+    if not owner_id:
+        return ResponseEnvelope(
+            success=True,
+            message="Unauthorized",
+            data=[],
+            request_id=request.state.request_id
+        )
+
+    filters = [Transaction.status == "CONFIRMED", Transaction.owner_id == owner_id]
+    if ingestion_id:
+        filters.append(Transaction.ingestion_id == ingestion_id)
+
+    now = datetime.now(timezone.utc)
+    slots = []
+
+    if time_range == "7D":
+        start_date = now - timedelta(days=7)
+        filters.append(Transaction.timestamp >= start_date)
+        stmt = (
+            select(
+                func.strftime("%Y-%m-%d", Transaction.timestamp).label("day"),
+                func.count(Transaction.id).label("count")
+            )
+            .where(*filters)
+            .group_by(func.strftime("%Y-%m-%d", Transaction.timestamp))
+            .order_by(func.strftime("%Y-%m-%d", Transaction.timestamp))
+        )
+        res = await db.execute(stmt)
+        rows = res.all()
+        
+        day_count = {row.day: row.count for row in rows}
+        for d in range(6, -1, -1):
+            dt = now - timedelta(days=d)
+            dt_str = dt.strftime("%Y-%m-%d")
+            slots.append({"time": f"Day {7-d}", "value": day_count.get(dt_str, 0)})
+
+    elif time_range == "30D":
+        start_date = now - timedelta(days=30)
+        filters.append(Transaction.timestamp >= start_date)
+        stmt = (
+            select(
+                func.strftime("%Y-%m-%d", Transaction.timestamp).label("day"),
+                func.count(Transaction.id).label("count")
+            )
+            .where(*filters)
+            .group_by(func.strftime("%Y-%m-%d", Transaction.timestamp))
+            .order_by(func.strftime("%Y-%m-%d", Transaction.timestamp))
+        )
+        res = await db.execute(stmt)
+        rows = res.all()
+        
+        day_count = {row.day: row.count for row in rows}
+        for d in range(29, -1, -1):
+            dt = now - timedelta(days=d)
+            dt_str = dt.strftime("%Y-%m-%d")
+            slots.append({"time": f"Day {30-d}", "value": day_count.get(dt_str, 0)})
+
+    else:
+        # Default 24H: Extract hour from timestamp
+        start_date = now - timedelta(hours=24)
+        filters.append(Transaction.timestamp >= start_date)
+        stmt = (
+            select(
+                func.strftime("%H", Transaction.timestamp).label("hour"),
+                func.count(Transaction.id).label("count")
+            )
+            .where(*filters)
+            .group_by(func.strftime("%H", Transaction.timestamp))
+            .order_by(func.strftime("%H", Transaction.timestamp))
+        )
+        res = await db.execute(stmt)
+        rows = res.all()
+
+        hour_count: dict[int, int] = {}
+        for row in rows:
+            try:
+                hour_count[int(row.hour)] = row.count
+            except (TypeError, ValueError):
+                pass
+
+        for slot_start in range(0, 24, 2):
+            slot_label = f"{slot_start:02d}:00"
+            value = hour_count.get(slot_start, 0) + hour_count.get(slot_start + 1, 0)
+            slots.append({"time": slot_label, "value": value})
+
+    # If no real data, return fallback so chart always has content
+    has_data = any(s["value"] > 0 for s in slots)
+    if not has_data:
+        if time_range == "7D":
+            slots = [
+                {"time": "Day 1", "value": 0},
+                {"time": "Day 2", "value": 0},
+                {"time": "Day 3", "value": 0},
+                {"time": "Day 4", "value": 0},
+                {"time": "Day 5", "value": 0},
+                {"time": "Day 6", "value": 0},
+                {"time": "Day 7", "value": 0},
+            ]
+        elif time_range == "30D":
+            slots = [{"time": f"Day {i}", "value": 0} for i in range(1, 31)]
+        else:
+            slots = [
+                {"time": "00:00", "value": 0},
+                {"time": "02:00", "value": 0},
+                {"time": "04:00", "value": 0},
+                {"time": "06:00", "value": 0},
+                {"time": "08:00", "value": 0},
+                {"time": "10:00", "value": 0},
+                {"time": "12:00", "value": 0},
+                {"time": "14:00", "value": 0},
+                {"time": "16:00", "value": 0},
+                {"time": "18:00", "value": 0},
+            ]
+
+    return ResponseEnvelope(
+        success=True,
+        message="Transaction velocity timeline retrieved.",
+        data=slots,
+        request_id=request.state.request_id
+    )
+
+
+@router.post("/kyc/upload")
+async def upload_kyc_csv(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db_session)
+) -> ResponseEnvelope[dict]:
+    """
+    Bulk import KYC customer profiles and associated records via CSV.
+    """
+    logger.info("Received KYC CSV upload request", filename=file.filename)
+    
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File size exceeds the limit."
+        )
+        
+    filename = file.filename.lower()
+    if not filename.endswith(".csv"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported format. Upload only CSV for KYC."
+        )
+        
+    try:
+        try:
+            df = pd.read_csv(io.BytesIO(contents), encoding="utf-8")
+        except Exception:
+            df = pd.read_csv(io.BytesIO(contents), encoding="latin-1")
+            
+        df = df.where(pd.notnull(df), None)
+        
+        required = ["full_name", "email", "pan_number", "aadhaar_number", "dob", "mobile", "kyc_status", "account_open_date"]
+        missing = [col for col in required if col not in df.columns]
+        if missing:
+            raise ValueError(f"Missing required columns: {', '.join(missing)}")
+            
+        success_count = 0
+        error_count = 0
+        errors = []
+        
+        for index, row in df.iterrows():
+            row_dict = row.to_dict()
+            try:
+                email = str(row_dict.get("email")).strip()
+                if not email or email == "None":
+                    raise ValueError("Email is required.")
+                
+                # Try parsing DOB
+                dob_str = str(row_dict.get("dob") or "").strip()
+                try:
+                    dob = pd.to_datetime(dob_str).to_pydatetime()
+                except Exception:
+                    dob = datetime.utcnow()
+                    
+                # Try parsing account open date
+                acc_date_str = str(row_dict.get("account_open_date") or "").strip()
+                try:
+                    account_open_date = pd.to_datetime(acc_date_str).to_pydatetime()
+                except Exception:
+                    account_open_date = datetime.utcnow()
+                
+                # Check if customer exists
+                stmt = select(Customer).where(func.lower(Customer.email) == email.lower())
+                res = await db.execute(stmt)
+                customer = res.scalars().first()
+                
+                if not customer:
+                    customer = Customer(
+                        full_name=str(row_dict.get("full_name") or ""),
+                        dob=dob,
+                        mobile=str(row_dict.get("mobile") or ""),
+                        email=email,
+                        pan_number=str(row_dict.get("pan_number") or ""),
+                        aadhaar_number_masked=str(row_dict.get("aadhaar_number") or "0000")[-4:],
+                        occupation=str(row_dict.get("occupation") or "Unknown"),
+                        annual_income=Decimal(str(row_dict.get("annual_income") or "0")),
+                        address=str(row_dict.get("address") or "")
+                    )
+                    db.add(customer)
+                    await db.flush()
+                
+                # Add/Update KYC Record
+                kyc_stmt = select(KYCRecord).where(KYCRecord.customer_id == customer.id)
+                k_res = await db.execute(kyc_stmt)
+                kyc_record = k_res.scalars().first()
+                
+                if not kyc_record:
+                    kyc_record = KYCRecord(
+                        customer_id=customer.id,
+                        kyc_status=str(row_dict.get("kyc_status") or "PENDING").upper(),
+                        account_open_date=account_open_date,
+                        selfie_match_score=float(row_dict.get("selfie_match_score") or 0.0),
+                        doc_verification_score=float(row_dict.get("doc_verification_score") or 0.0)
+                    )
+                    db.add(kyc_record)
+                else:
+                    kyc_record.kyc_status = str(row_dict.get("kyc_status") or "PENDING").upper()
+                    if row_dict.get("selfie_match_score"):
+                        kyc_record.selfie_match_score = float(row_dict.get("selfie_match_score"))
+                    if row_dict.get("doc_verification_score"):
+                        kyc_record.doc_verification_score = float(row_dict.get("doc_verification_score"))
+                
+                success_count += 1
+            except Exception as e:
+                error_count += 1
+                errors.append({"row": index + 2, "error": str(e)})
+                
+        await db.commit()
+        
+        return ResponseEnvelope(
+            success=True,
+            message=f"Successfully imported {success_count} KYC records.",
+            data={
+                "success_count": success_count,
+                "error_count": error_count,
+                "errors": errors
+            },
+            request_id=request.state.request_id
+        )
+            
+    except Exception as exc:
+        await db.rollback()
+        logger.error("Failed parsing KYC CSV", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"KYC Parse Error: {str(exc)}"
+        )

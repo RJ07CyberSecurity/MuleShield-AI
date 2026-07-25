@@ -1,15 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { apiClient } from "../../services/api-client";
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const email = searchParams.get("email") || "";
+  const token = searchParams.get("token") || "";
+  
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Requirements checks
   const hasLowercase = /[a-z]/.test(newPassword);
@@ -44,14 +51,37 @@ export default function ResetPasswordPage() {
     return "text-risk-low";
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!hasLowercase || !hasUppercase || !hasNumber || !hasSpecial || newPassword !== confirmPassword) {
       return;
     }
-    // Success -> redirect back to login page
-    alert("Password updated successfully. Please log in.");
-    router.push("/login");
+    
+    if (!email || !token) {
+      setError("Invalid or missing reset token. Please request a new password reset link.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await apiClient.post<any>("/api/v1/auth/reset-password", {
+        email,
+        token,
+        new_password: newPassword
+      });
+      
+      if (!response.success) {
+        throw new Error(response.message || "Failed to reset password.");
+      }
+      
+      alert("Password updated successfully. Please log in.");
+      router.push("/login");
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to reset password. Please check your OTP.");
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -121,6 +151,18 @@ export default function ResetPasswordPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
+                {error}
+              </div>
+            )}
+            
+            {(!email || !token) && !error && (
+              <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
+                Missing verification token. Please use the link from your email.
+              </div>
+            )}
+
             {/* New password input */}
             <div className="space-y-2">
               <label className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
@@ -209,9 +251,10 @@ export default function ResetPasswordPage() {
             {/* Update button */}
             <button
               type="submit"
-              className="w-full py-4 rounded-xl bg-[#b4c5ff] text-[#002a78] font-bold text-body-sm hover:bg-[#b4c5ff]/90 transition-all flex items-center justify-center gap-2"
+              disabled={isLoading}
+              className="w-full py-4 rounded-xl bg-[#b4c5ff] text-[#002a78] font-bold text-body-sm hover:bg-[#b4c5ff]/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
             >
-              Update Password
+              {isLoading ? "Updating Password..." : "Update Password"}
               <span className="material-symbols-outlined text-sm font-bold">arrow_forward</span>
             </button>
           </form>
@@ -225,5 +268,13 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#07090e] flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin"></div></div>}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

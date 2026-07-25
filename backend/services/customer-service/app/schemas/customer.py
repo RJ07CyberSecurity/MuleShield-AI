@@ -64,6 +64,11 @@ class CustomerResponse(BaseModel):
     phone: str
     kyc_status: str
     risk_score: float
+    pan_number: str | None = None
+    aadhaar_number_masked: str | None = None
+    occupation: str | None = None
+    annual_income: float | None = None
+    address: str | None = None
     kyc_records: list[KYCRecordResponse] = []
     created_at: datetime
     updated_at: datetime

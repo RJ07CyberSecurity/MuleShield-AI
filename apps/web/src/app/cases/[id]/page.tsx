@@ -1,524 +1,626 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUIStore } from "../../../store/useUIStore";
-import { AnimatePresence, motion } from "framer-motion";
-import ReportGenerator from "../../../components/dashboard/ReportGenerator";
-import NetworkGraph from "../../../components/dashboard/NetworkGraph";
 import { apiClient } from "../../../services/api-client";
+import TimelineChart from "../../../components/cases/TimelineChart";
+import NetworkGraph from "../../../components/dashboard/NetworkGraph";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+}
+
+interface CaseDetails {
+  id: string;
+  notes: string;
+  status: string;
+  customer_id: string;
+  created_at: string;
+  customer_name?: string;
+  customer_email?: string;
+  customer_kyc_status?: string;
+  customer_risk_score?: number;
+  financial_telemetry?: {
+    current_balance?: number;
+    total_inflow?: number;
+    total_outflow?: number;
+    velocity_increase?: number;
+  };
+  subject_profile?: {
+    name?: string;
+    email?: string;
+  };
+  customer_phone?: string;
+  customer_pan?: string;
+  customer_aadhaar?: string;
+  customer_occupation?: string;
+  customer_income?: number;
+  customer_address?: string;
 }
 
 export default function CaseDetailPage({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
   const { addToast } = useUIStore();
-  const [isFrozen, setIsFrozen] = useState(false);
-  const [assigned, setAssigned] = useState(false);
-  const [showReportModal, setShowReportModal] = useState(false);
-  const [piiRevealed, setPiiRevealed] = useState(false);
+  const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notes, setNotes] = useState("");
+  const [isFreezing, setIsFreezing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Fake timeline data
+  const timelineData: any[] = [
+    { date: "NOV 01", amount: 4000, risk: "low" },
+    { date: "NOV 08", amount: 15000, risk: "high" },
+    { date: "NOV 15", amount: 2000, risk: "low" },
+    { date: "NOV 22", amount: 25000, risk: "high" },
+    { date: "NOV 29", amount: 5000, risk: "low" },
+    { date: "TODAY", amount: 18000, risk: "high" },
+  ];
 
-  const handleFreeze = async () => {
-    try {
-      // In production, gets active account number from dossier details
-      const response = await apiClient.post<any>(`/api/v1/cases/${id}/freeze-account`, {
-        account_number: "ACC-092281",
-        legal_reference: "SEC-COMP-5421A"
-      });
-      if (response.success) {
-        setIsFrozen(true);
-        addToast("CRITICAL RESPONSE: Host node and linked accounts assets frozen successfully.", "error");
-      } else {
-        addToast(response.message || "Failed to freeze account assets.", "error");
+  useEffect(() => {
+    const fetchDossier = async () => {
+      setLoading(true);
+      try {
+        const caseId = id;
+        const res = await apiClient.get<any>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
+        if (res && res.success && res.data) {
+          const detail = res.data;
+          if (detail.customer_id) {
+            try {
+              const custRes = await apiClient.get<any>(`/api/v1/customers/${encodeURIComponent(detail.customer_id)}`);
+              if (custRes && custRes.success && custRes.data) {
+                const customer = custRes.data;
+                detail.customer_name = `${customer.first_name} ${customer.last_name}`;
+                detail.customer_email = customer.email;
+                detail.customer_kyc_status = customer.kyc_status;
+                detail.customer_risk_score = customer.risk_score;
+                detail.customer_phone = customer.phone;
+                detail.customer_pan = customer.pan_number;
+                detail.customer_aadhaar = customer.aadhaar_number_masked;
+                detail.customer_occupation = customer.occupation;
+                detail.customer_income = customer.annual_income;
+                detail.customer_address = customer.address;
+              }
+            } catch (custErr) {
+              console.warn("Failed to fetch customer data:", custErr);
+            }
+          }
+          setCaseDetails(detail);
+        }
+      } catch (err: any) {
+        addToast(err.message || "Failed to load case details.", "error");
+      } finally {
+        setLoading(false);
       }
+    };
+    fetchDossier();
+  }, [id, addToast]);
+
+  const handleFreezeAccount = async () => {
+    if (!id) return;
+    setIsFreezing(true);
+    try {
+      const caseId = id;
+      await apiClient.post(`/api/v1/cases/${encodeURIComponent(caseId)}/freeze-account`, {});
+      addToast("Account has been frozen.", "success");
     } catch (err: any) {
-      addToast("RBAC Access Denied: Compliance Officer roles required to freeze assets.", "error");
+      addToast(err.message || "Failed to freeze account.", "error");
+    } finally {
+      setIsFreezing(false);
     }
   };
 
-  const handleRevealPII = async () => {
+  const handleSaveNotes = async () => {
+    if (!id || !notes.trim()) return;
+    setIsSaving(true);
     try {
-      // Triggers the Backend GET /cases/{id} logic which registers the PII_REVEAL AuditLog
-      const response = await apiClient.get<any>(`/api/v1/cases/${id}`);
-      if (response.success) {
-        setPiiRevealed(true);
-        addToast("PII Revealed. Access logged to compliance audit trail.", "success");
-      }
-    } catch (err) {
-      addToast("Failed to register PII audit access lookup.", "error");
+      const caseId = id;
+      await apiClient.post(`/api/v1/cases/${encodeURIComponent(caseId)}/notes`, {
+        text: notes
+      });
+      addToast("Notes saved to vault.", "success");
+      setNotes("");
+    } catch (err: any) {
+      addToast(err.message || "Failed to save notes.", "error");
+    } finally {
+      setIsSaving(false);
     }
   };
+
+  const displayName = caseDetails?.customer_name || caseDetails?.subject_profile?.name || "Unknown Entity";
+  const displayId = id.includes("c1c1") ? "ACC-092281" : id;
+  const riskScore = caseDetails?.customer_risk_score !== undefined ? Math.round(caseDetails.customer_risk_score * 100) : 88;
+  const totalAssets = caseDetails?.financial_telemetry?.total_inflow ?? 0;
+  const totalOutflows = caseDetails?.financial_telemetry?.total_outflow ?? 0;
+  const velocity = caseDetails?.financial_telemetry?.velocity_increase ?? 0;
+  const avgBalance = caseDetails?.financial_telemetry?.current_balance ?? 0;
 
   return (
-    <div className="space-y-6 text-left">
-      {/* Back button */}
-      <div>
-        <Link
-          href="/cases"
-          className="inline-flex items-center gap-1.5 text-body-sm text-primary hover:text-primary-fixed font-semibold hover:underline"
-        >
-          <span className="material-symbols-outlined text-sm">arrow_back</span>
-          Back to Case Registry
-        </Link>
-      </div>
-
-      {/* Dossier Header Info */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 pb-6 border-b border-outline-variant/30">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
-              Dossier: Account Forensic
-            </span>
-            <span className="px-2.5 py-0.5 bg-risk-critical/15 border border-risk-critical/30 text-risk-critical text-[10px] font-label-mono uppercase tracking-wider rounded font-bold">
-              Critical Threat
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="font-display-kpi text-4xl font-extrabold text-on-surface tracking-tight">
-              {id === "ACC-092281" ? "ACC-092281" : id}
-            </h1>
-            <span className="text-xl text-on-surface-variant font-light">/ Bank of Geneva</span>
-          </div>
-
-          <div className="flex items-center gap-4 text-xs font-semibold">
-            <span className="text-risk-low flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-risk-low animate-pulse"></span>
-              Active
-            </span>
-            <span className="text-risk-medium flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-sm">visibility</span>
-              Under Review
-            </span>
-          </div>
-        </div>
-
-        {/* Action Controls */}
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => {
-              setAssigned(true);
-              addToast("Case successfully assigned to Sarah Chambers (CCO).", "success");
-            }}
-            className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 rounded-xl text-body-sm font-semibold transition-colors flex items-center gap-2 text-on-surface"
-          >
-            <span className="material-symbols-outlined text-sm">assignment_ind</span>
-            {assigned ? "Assigned (Chambers)" : "Assign Analyst"}
-          </button>
-
-          <button
-            onClick={() => setShowReportModal(true)}
-            className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 rounded-xl text-body-sm font-semibold transition-colors flex items-center gap-2 text-on-surface"
-          >
-            <span className="material-symbols-outlined text-sm">description</span>
-            Generate Report
-          </button>
-
-          <Link
-            href={`/cases/${id}/fingerprint`}
-            className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 rounded-xl text-body-sm font-semibold transition-colors flex items-center gap-2 text-on-surface"
-          >
-            <span className="material-symbols-outlined text-sm">fingerprint</span>
-            Behavioral Fingerprint
-          </Link>
-
-          <button
-            onClick={() => router.push("/explorer")}
-            className="px-4 py-2 bg-primary/20 hover:bg-primary/30 border border-primary/30 rounded-xl text-body-sm font-bold text-primary transition-all flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-sm">play_circle</span>
-            Start Investigation
-          </button>
-
-          <button
-            onClick={handleFreeze}
-            className="px-4 py-2 bg-risk-critical text-white font-bold rounded-xl text-body-sm hover:bg-risk-critical/90 transition-all flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-sm">emergency_home</span>
-            {isFrozen ? "Account Frozen" : "Freeze Account"}
-          </button>
-        </div>
-      </div>
-
-      {/* Main 3-Column Core Metrics grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Column 1: Risk Intelligence */}
-        <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-6">
-          <h3 className="font-headline-sm text-xs font-bold text-on-surface uppercase tracking-wider">
-            Risk Intelligence
-          </h3>
-
-          <div className="flex gap-6 items-center">
-            {/* Anomaly Gauge */}
-            <div className="flex flex-col items-center justify-center relative w-24 h-24 flex-shrink-0">
-              <svg className="w-full h-full transform -rotate-90">
-                <circle cx="48" cy="48" r="38" stroke="rgba(67, 70, 85, 0.2)" strokeWidth="6" fill="transparent" />
-                <circle
-                  cx="48"
-                  cy="48"
-                  r="38"
-                  stroke="#DC2626"
-                  strokeWidth="6"
-                  fill="transparent"
-                  strokeDasharray="238"
-                  strokeDashoffset={50}
-                  className="transition-all duration-500 ease-out"
-                />
-              </svg>
-              <div className="absolute flex flex-col items-center justify-center">
-                <span className="text-2xl font-black text-on-surface font-display-kpi leading-none">89</span>
-                <span className="text-[7px] font-label-mono text-on-surface-variant uppercase tracking-wider mt-1">
-                  Score
-                </span>
-              </div>
-            </div>
-
-            {/* Risk Trend Info */}
-            <div className="space-y-1.5 flex-1">
-              <div className="text-[10px] font-label-mono text-on-surface-variant uppercase tracking-wider font-semibold">
-                30-Day Risk Trend
-              </div>
-              <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                Elevated risk trajectory detected. Score increased <strong className="text-risk-high">+14</strong> in last 48h.
-              </p>
-            </div>
-          </div>
-
-          {/* SHAP Contributors */}
-          <div className="space-y-3 pt-4 border-t border-outline-variant/10 text-xs">
-            <div className="text-[10px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
-              SHAP Contributors
-            </div>
-            <div className="flex justify-between items-center p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10">
-              <span className="text-on-surface-variant font-medium">Rapid In-Out Flow</span>
-              <span className="font-bold text-risk-critical">+34.2</span>
-            </div>
-            <div className="flex justify-between items-center p-3 rounded-lg bg-surface-container-lowest border border-outline-variant/10">
-              <span className="text-on-surface-variant font-medium">Device Token Conflict</span>
-              <span className="font-bold text-risk-high">+24.8</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Column 2: Subject Profile */}
-        <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-6">
-          <div className="flex justify-between items-center">
-            <h3 className="font-headline-sm text-xs font-bold text-on-surface uppercase tracking-wider">
-              Subject Profile
-            </h3>
-            <span className="material-symbols-outlined text-on-surface-variant text-base cursor-pointer hover:text-primary transition-colors">open_in_new</span>
-          </div>
-
-          <div className="flex gap-4 items-center">
-            {/* Avatar placeholder */}
-            <div className="w-14 h-14 rounded-full bg-secondary-container flex items-center justify-center border border-outline-variant/30 overflow-hidden flex-shrink-0">
-              <img
-                className="w-full h-full object-cover"
-                alt="Vasily Kandinsky avatar"
-                src="https://lh3.googleusercontent.com/aida-public/AB6AXuA1vmxBiK08u2KMyW_AgKQAKFTMxxMGvxlgk-c7IZwrQlOb9w0qwj7TlrNIMpQdT492sBN9RRQ2sjdEegZrNM72WOYySC6N_kyDmbbh86ln22aIpSmDviDiTyvDKNuULnoT3v-a8YgAF5S4gvL8kOQ2FCquD3GJg5gGhTxpNwgpGCdF3I9aiI8_yniPtcp_cE3RXm4xqzM2kWu6XLUJWfpoyuw47WQpY4Nv8KfsuulzYzNu5_ZDZ0h5"
-              />
-            </div>
-            <div>
-              <h4 className="font-bold text-base text-on-surface">Vasily Kandinsky</h4>
-              <p className="text-xs text-on-surface-variant font-medium mt-0.5">
-                Art Dealer • Kandinsky Fine Arts
-              </p>
-            </div>
-          </div>
-
-          {/* Profiler list info */}
-          <div className="space-y-4 pt-4 border-t border-outline-variant/10 text-xs">
-            <div className="flex justify-between items-center">
-              <span className="text-on-surface-variant font-medium">Email Address</span>
-              <span className="text-on-surface font-semibold font-label-mono">{piiRevealed ? "kandinsky@bankgeneva.ch" : "ka••••••••@bankgeneva.ch"}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-on-surface-variant font-medium">Phone Number</span>
-              <span className="text-on-surface font-semibold font-label-mono">{piiRevealed ? "+41 22 798 1204" : "+41 22 •••• ••••"}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-on-surface-variant font-medium">Annual Income</span>
-              <span className="text-primary font-bold font-label-mono">{piiRevealed ? "$500k+ USD" : "$•••••• USD"}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-on-surface-variant font-medium">Onboarding Date</span>
-              <span className="text-on-surface font-semibold font-label-mono">12 MAR 2021</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-on-surface-variant font-medium">Country Risk</span>
-              <span className="px-2 py-0.5 bg-risk-low/10 border border-risk-low/20 rounded font-bold text-risk-low font-label-mono text-[10px]">
-                LOW
-              </span>
-            </div>
-          </div>
-
-          {!piiRevealed && (
-            <button
-              onClick={handleRevealPII}
-              className="w-full py-2 bg-primary/10 hover:bg-primary/20 border border-primary/25 rounded-xl text-[10px] font-bold text-primary transition-colors flex items-center justify-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-sm">visibility</span>
-              Reveal PII & Audit Access
-            </button>
-          )}
-
-          {/* KYC validation stats */}
-          <div className="pt-6 border-t border-outline-variant/10 space-y-4">
-            <div className="flex items-center gap-2 text-risk-low text-xs font-bold">
-              <span className="material-symbols-outlined text-base">verified</span>
-              KYC FULLY VERIFIED
-            </div>
-
-            {/* Quick action icons */}
-            <div className="grid grid-cols-3 gap-3">
-              <div
-                onClick={() => addToast("Viewing user digital verification dossier", "info")}
-                className="p-3 bg-surface-container-lowest border border-outline-variant/20 rounded-xl flex items-center justify-center cursor-pointer hover:border-primary/40 transition-colors"
-              >
-                <span className="material-symbols-outlined text-primary text-base">contact_page</span>
-              </div>
-              <div
-                onClick={() => addToast("Loading login trace coordinates heatmap", "info")}
-                className="p-3 bg-surface-container-lowest border border-outline-variant/20 rounded-xl flex items-center justify-center cursor-pointer hover:border-primary/40 transition-colors"
-              >
-                <span className="material-symbols-outlined text-primary text-base">location_on</span>
-              </div>
-              <div
-                onClick={() => addToast("Fetching bank partner settlement ledger metadata", "info")}
-                className="p-3 bg-surface-container-lowest border border-outline-variant/20 rounded-xl flex items-center justify-center cursor-pointer hover:border-primary/40 transition-colors"
-              >
-                <span className="material-symbols-outlined text-primary text-base">account_balance</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Column 3: Financial Telemetry */}
-        <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-6">
-          <div className="flex justify-between items-baseline">
-            <h3 className="font-headline-sm text-xs font-bold text-on-surface uppercase tracking-wider">
-              Financial Telemetry
-            </h3>
-            <span className="font-label-mono text-[9px] text-on-surface-variant uppercase font-bold tracking-wider">
-              Updated: Just Now
-            </span>
-          </div>
-
-          <div className="space-y-1">
-            <div className="text-[10px] font-label-mono text-on-surface-variant uppercase font-bold tracking-wider">
-              Current Balance
-            </div>
-            <div className="text-3xl font-extrabold text-on-surface tracking-tight font-display-kpi">
-              $1,248,500.00
-            </div>
-          </div>
-
-          {/* Progress bars (Inflow vs Outflow) */}
-          <div className="space-y-4 pt-4 border-t border-outline-variant/10 text-xs">
-            <div className="space-y-1.5">
-              <div className="flex justify-between font-label-mono uppercase tracking-wider">
-                <span className="text-on-surface-variant">Total Inflow</span>
-                <span className="text-risk-low font-bold">$2.4M</span>
-              </div>
-              <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden w-full">
-                <div className="bg-risk-low h-full rounded-full w-[80%]" />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex justify-between font-label-mono uppercase tracking-wider">
-                <span className="text-on-surface-variant">Total Outflow</span>
-                <span className="text-risk-critical font-bold">$1.15M</span>
-              </div>
-              <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden w-full">
-                <div className="bg-risk-critical h-full rounded-full w-[45%]" />
-              </div>
-            </div>
-          </div>
-
-          {/* Velocity Analysis */}
-          <div className="pt-4 border-t border-outline-variant/10 space-y-3">
-            <div className="flex justify-between items-center text-[10px] font-label-mono uppercase tracking-wider">
-              <span className="text-on-surface-variant">Velocity Analysis</span>
-              <span className="text-risk-high font-bold">+245%</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-center">
-              <div className="p-3 rounded-xl bg-surface-container-lowest border border-outline-variant/10">
-                <div className="text-lg font-bold text-on-surface">84</div>
-                <div className="text-[8px] font-label-mono text-on-surface-variant uppercase tracking-wider mt-1">
-                  Txns / 24H
+    <div className="relative min-h-screen bg-[#0F111A] text-on-surface font-body-sm selection:bg-primary/30 pb-10">
+      <div className="flex flex-col xl:flex-row h-auto xl:h-[calc(100vh-20px)] overflow-hidden">
+        {/* Main Content Area */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin scrollbar-thumb-[#282a32] scrollbar-track-transparent">
+          
+          {/* Header Dashboard Grid */}
+          <div className="grid grid-cols-12 gap-6 mb-6">
+            
+            {/* Entity Dossier Block */}
+            <div className="col-span-12 xl:col-span-8 flex flex-col bg-[#11131b] border border-[#282a32] rounded-2xl p-5 shadow-lg relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
+              
+              {/* Header */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 z-10 pb-5 border-b border-[#282a32]">
+                <div className="flex items-center gap-5">
+                  <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-[#1d1f27] to-[#11131b] border border-[#32343d] flex flex-shrink-0 items-center justify-center overflow-hidden shadow-inner">
+                    <span className="material-symbols-outlined text-3xl text-outline-variant">person</span>
+                  </div>
+                  <div className="min-w-0 flex-1 pr-4">
+                    <div className="flex items-center gap-3 mb-1">
+                      <h1 className="text-2xl font-display-kpi font-bold text-on-surface tracking-tight truncate">{displayName}</h1>
+                      <span className={`flex-shrink-0 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${caseDetails?.customer_kyc_status === 'APPROVED' ? 'bg-[#16A34A]/20 text-[#16A34A] border-[#16A34A]/30' : 'bg-risk-high/20 text-risk-high border-risk-high/30'}`}>
+                        {caseDetails?.customer_kyc_status === 'APPROVED' ? 'Verified Entity' : (caseDetails?.customer_kyc_status || 'Unverified')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs font-label-mono text-on-surface-variant font-medium">
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <button className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-primary/10 border border-primary/30 text-primary rounded-lg text-[11px] font-bold uppercase tracking-wider hover:bg-primary/20 transition-all">
+                    <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+                    AI Summary
+                  </button>
+                  <button className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-[#1d1f27] border border-[#32343d] text-on-surface rounded-lg text-[11px] font-bold uppercase tracking-wider hover:bg-[#282a32] transition-all">
+                    <span className="material-symbols-outlined text-[16px]">download</span>
+                    Export
+                  </button>
+                  <button 
+                    onClick={handleFreezeAccount}
+                    disabled={isFreezing}
+                    className="flex-1 md:flex-none flex items-center justify-center gap-1.5 px-4 py-2 bg-risk-critical/10 border border-risk-critical/40 text-risk-critical rounded-lg text-[11px] font-bold uppercase tracking-wider hover:bg-risk-critical/20 transition-all shadow-[0_0_15px_rgba(220,38,38,0.15)] disabled:opacity-50">
+                    <span className="material-symbols-outlined text-[16px]">lock</span>
+                    {isFreezing ? "Freezing..." : "Freeze"}
+                  </button>
                 </div>
               </div>
-              <div className="p-3 rounded-xl bg-surface-container-lowest border border-outline-variant/10">
-                <div className="text-lg font-bold text-on-surface">12</div>
-                <div className="text-[8px] font-label-mono text-on-surface-variant uppercase tracking-wider mt-1">
-                  Txns / Avg
+
+              {/* Profile Details Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-y-4 gap-x-6 pt-5 z-10">
+                <div>
+                  <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-1">Email</div>
+                  <div className="text-xs text-on-surface font-medium truncate">{caseDetails?.customer_email || "N/A"}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-1">Phone</div>
+                  <div className="text-xs text-on-surface font-medium truncate">{caseDetails?.customer_phone || "N/A"}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-1">PAN Number</div>
+                  <div className="text-xs font-label-mono text-on-surface font-bold truncate">{caseDetails?.customer_pan || "N/A"}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-1">Aadhaar (Masked)</div>
+                  <div className="text-xs font-label-mono text-on-surface font-bold truncate">{caseDetails?.customer_aadhaar || "N/A"}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-1">Occupation</div>
+                  <div className="text-xs text-on-surface font-medium truncate">{caseDetails?.customer_occupation || "N/A"}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-1">Annual Income</div>
+                  <div className="text-xs font-display-kpi text-[#16A34A] font-bold truncate">{caseDetails?.customer_income ? `$${caseDetails.customer_income.toLocaleString("en-US")}` : "N/A"}</div>
+                </div>
+                <div className="col-span-2">
+                  <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-1">Registered Address</div>
+                  <div className="text-xs text-on-surface font-medium truncate">{caseDetails?.customer_address || "N/A"}</div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Grid Row (Network Intelligence & Timeline) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Network Intelligence (2/3 width) */}
-        <section className="lg:col-span-2 p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col justify-between">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-headline-sm text-xs font-bold text-on-surface uppercase tracking-wider">
-              Network Intelligence (Hops: 2)
-            </h3>
-            <div className="flex items-center gap-4">
-              <span className="px-2.5 py-0.5 bg-risk-critical/15 border border-risk-critical/30 text-risk-critical text-[9px] font-label-mono uppercase tracking-wider rounded">
-                Suspicious Nodes (3)
-              </span>
-              <span
-                onClick={() => addToast("Toggled Network Canvas Fullscreen", "info")}
-                className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-base cursor-pointer transition-colors"
-              >
-                fullscreen
-              </span>
-            </div>
-          </div>
-
-          {/* Interactive Network Graph */}
-          <div className="w-full my-4 flex-grow flex flex-col min-h-[300px]">
-            <NetworkGraph accountId={id} />
-          </div>
-
-          {/* Bottom count specifications */}
-          <div className="grid grid-cols-3 gap-4 pt-4 border-t border-outline-variant/10 text-center font-label-mono text-[10px]">
-            <div>
-              <div className="text-on-surface font-bold text-base">08</div>
-              <div className="text-on-surface-variant uppercase tracking-wider mt-1">Linked Devices</div>
-            </div>
-            <div className="border-l border-outline-variant/10">
-              <div className="text-on-surface font-bold text-base">03</div>
-              <div className="text-on-surface-variant uppercase tracking-wider mt-1">Shared IPs</div>
-            </div>
-            <div className="border-l border-outline-variant/10">
-              <div className="text-on-surface font-bold text-base">12</div>
-              <div className="text-on-surface-variant uppercase tracking-wider mt-1">Beneficiaries</div>
-            </div>
-          </div>
-        </section>
-
-        {/* Timeline (1/3 width) */}
-        <section className="lg:col-span-1 p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col justify-between">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-headline-sm text-xs font-bold text-on-surface uppercase tracking-wider">
-              Timeline
-            </h3>
-            <div className="flex items-center gap-3">
-              <span
-                onClick={() => addToast("Filtering timeline logs", "info")}
-                className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-base cursor-pointer transition-colors"
-              >
-                filter_alt
-              </span>
-              <span
-                onClick={() => addToast("Exporting timeline events ledger to CSV", "success")}
-                className="material-symbols-outlined text-on-surface-variant hover:text-on-surface text-base cursor-pointer transition-colors"
-              >
-                download
-              </span>
-            </div>
-          </div>
-
-          {/* Timeline events lists */}
-          <div className="space-y-6 max-h-[310px] overflow-y-auto pr-1">
-            {/* Item 1 */}
-            <div className="relative pl-6 border-l border-outline-variant/20 space-y-1">
-              <div className="absolute left-[-5px] top-1.5 w-2.5 h-2.5 rounded-full bg-risk-critical animate-pulse" />
-              <div className="flex justify-between items-baseline text-[9px] font-label-mono">
-                <span className="font-bold text-risk-critical">Critical Alert Generated</span>
-                <span className="text-on-surface-variant">14:02:11</span>
+            
+            {/* Risk Scores Block */}
+            <div className="col-span-12 xl:col-span-4 flex gap-4">
+              <div className="flex-1 bg-[#11131b] border border-risk-critical/40 rounded-2xl p-4 flex flex-col justify-between shadow-[0_0_20px_rgba(220,38,38,0.05)] relative overflow-hidden group hover:border-risk-critical/60 transition-colors">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-risk-critical/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/3 pointer-events-none group-hover:bg-risk-critical/15 transition-colors"></div>
+                <h3 className="text-[10px] font-label-mono font-bold text-on-surface-variant uppercase tracking-widest z-10">Risk Score</h3>
+                <div className="z-10 mt-2">
+                  <div className="flex items-baseline gap-1 text-risk-critical">
+                    <span className="font-display-kpi text-4xl font-black">{riskScore}</span>
+                    <span className="font-label-mono text-sm font-bold text-risk-critical/70">/100</span>
+                  </div>
+                  <div className="text-[10px] font-bold text-risk-critical/80 uppercase tracking-widest mt-1">Critical Alert</div>
+                </div>
               </div>
-              <p className="text-xs text-on-surface-variant leading-relaxed">
-                System detected rapid fund dispersal to 4 high-risk jurisdictions.
+              
+              <div className="flex-1 bg-[#11131b] border border-[#06b6d4]/40 rounded-2xl p-4 flex flex-col justify-between shadow-[0_0_20px_rgba(6,182,212,0.05)] relative overflow-hidden group hover:border-[#06b6d4]/60 transition-colors">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[#06b6d4]/10 rounded-full blur-2xl -translate-y-1/2 translate-x-1/3 pointer-events-none group-hover:bg-[#06b6d4]/15 transition-colors"></div>
+                <h3 className="text-[10px] font-label-mono font-bold text-on-surface-variant uppercase tracking-widest z-10">ML Probability</h3>
+                <div className="z-10 mt-2">
+                  <div className="flex items-baseline gap-1 text-[#06b6d4]">
+                    <span className="font-display-kpi text-4xl font-black">92</span>
+                    <span className="font-label-mono text-sm font-bold text-[#06b6d4]/70">%</span>
+                  </div>
+                  <div className="text-[10px] font-bold text-[#06b6d4]/80 uppercase tracking-widest mt-1">High Confidence</div>
+                </div>
+              </div>
+            </div>
+            
+          </div>
+          
+          {/* Middle Row */}
+          <div className="grid grid-cols-12 gap-6 mb-6">
+            
+            {/* RK Behavioral Analysis */}
+            <div className="col-span-12 xl:col-span-4 bg-[#11131b] border border-[#282a32] rounded-2xl p-5 shadow-lg flex flex-col">
+              <h3 className="flex items-center gap-2 text-[11px] font-label-mono font-bold text-on-surface uppercase tracking-widest mb-4">
+                <span className="material-symbols-outlined text-[16px] text-primary">psychology</span>
+                RK AI Behavioral Analysis
+              </h3>
+              <p className="text-xs text-on-surface-variant leading-relaxed font-medium">
+                "Pattern detection identifies extreme high-velocity throughput. Account exhibits classic 'mule' behavior: high-value incoming UPI bursts immediately followed by rapid ATM cash-outs and off-ledger transfers. No stable source of income detected over 90 days. Risk cluster associated with known 'Operation Ghost' fraud rings."
               </p>
             </div>
-
-            {/* Item 2 */}
-            <div className="relative pl-6 border-l border-outline-variant/20 space-y-1">
-              <div className="absolute left-[-5px] top-1.5 w-2.5 h-2.5 rounded-full bg-primary" />
-              <div className="flex justify-between items-baseline text-[9px] font-label-mono">
-                <span className="font-bold text-on-surface">Session Login</span>
-                <span className="text-on-surface-variant">13:45:00</span>
-              </div>
-              <p className="text-xs text-on-surface-variant leading-relaxed">
-                User logged in from Lagos, Nigeria. New IP Address detected.
-              </p>
-            </div>
-
-            {/* Item 3 */}
-            <div className="relative pl-6 border-l border-outline-variant/20 space-y-1">
-              <div className="absolute left-[-5px] top-1.5 w-2.5 h-2.5 rounded-full bg-risk-low" />
-              <div className="flex justify-between items-baseline text-[9px] font-label-mono">
-                <span className="font-bold text-risk-low">Diligence Update</span>
-                <span className="text-on-surface-variant">09:12:33</span>
-              </div>
-              <p className="text-xs text-on-surface-variant leading-relaxed">
-                Analyst (ID: 022) updated PEP status to Negative.
-              </p>
-            </div>
-
-            {/* Item 4 */}
-            <div className="relative pl-6 space-y-1">
-              <div className="absolute left-0 top-1.5 w-2.5 h-2.5 rounded-full bg-on-surface-variant/40" />
-              <div className="flex justify-between items-baseline text-[9px] font-label-mono">
-                <span className="font-bold text-on-surface-variant">Inbound Wire</span>
-                <span className="text-on-surface-variant">YESTERDAY</span>
-              </div>
-              <p className="text-xs text-on-surface-variant leading-relaxed">
-                Transfer received: $450,000.
-              </p>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* Footer Restrict message */}
-      <footer className="pt-8 border-t border-outline-variant/10 flex justify-between items-center text-[10px] font-label-mono text-on-surface-variant/40 uppercase tracking-widest">
-        <span>© 2026 SENTINEL INTELLIGENCE SYSTEMS. RESTRICTED ACCESS.</span>
-        <div className="flex gap-4 font-semibold">
-          <span>Privacy Policy</span>
-          <span>Terms of Service</span>
-          <span className="text-risk-low">Security Status: V.4.2 Active</span>
-        </div>
-      </footer>
-
-      {/* Report Generator Modal Overlay */}
-      <AnimatePresence>
-        {showReportModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="relative w-full max-w-xl flex justify-center"
-            >
-              <div className="absolute top-2 right-2 z-10">
-                <button
-                  onClick={() => setShowReportModal(false)}
-                  className="p-1.5 rounded-full bg-surface-container-high hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors"
-                >
-                  <span className="material-symbols-outlined text-sm">close</span>
+            
+            {/* Transaction Flow Intelligence */}
+            <div className="col-span-12 xl:col-span-8 bg-[#11131b] border border-[#282a32] rounded-2xl p-5 shadow-lg relative flex flex-col overflow-hidden">
+              <h3 className="text-[11px] font-label-mono font-bold text-on-surface uppercase tracking-widest mb-2 z-10">
+                Transaction Flow Intelligence
+              </h3>
+              <div className="absolute top-4 right-4 z-10">
+                <button className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-outline hover:text-on-surface transition-colors border border-outline/30 px-2 py-1 rounded">
+                  <span className="material-symbols-outlined text-[12px]">open_in_full</span> Expand
                 </button>
               </div>
-              <ReportGenerator
-                accountId={id}
-                caseId={id}
-              />
-            </motion.div>
+              <div className="flex-1 relative min-h-[120px] flex items-center justify-center">
+                {/* Visual mock of the flow graph for this specific dashboard view */}
+                <div className="flex items-center justify-between w-full max-w-[500px] mt-4 px-4">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-outline-variant outline outline-2 outline-offset-2 outline-outline/30"></div>
+                    <span className="text-[8px] font-label-mono text-outline-variant uppercase tracking-widest">External Source</span>
+                  </div>
+                  <div className="flex-1 h-px bg-gradient-to-r from-outline-variant/30 via-primary/50 to-primary relative mx-4 flex items-center justify-center">
+                     <div className="w-1.5 h-1.5 rounded-full bg-primary absolute shadow-[0_0_8px_rgba(180,197,255,0.8)] animate-ping"></div>
+                  </div>
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center shadow-[0_0_15px_rgba(180,197,255,0.2)]">
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                    </div>
+                    <span className="text-[8px] font-label-mono text-primary uppercase tracking-widest font-bold">Target Account</span>
+                  </div>
+                  <div className="flex-1 h-px bg-gradient-to-r from-primary via-risk-critical/50 to-risk-critical/30 relative mx-4 flex items-center justify-center">
+                     <div className="w-1.5 h-1.5 rounded-full bg-risk-critical absolute shadow-[0_0_8px_rgba(220,38,38,0.8)] animate-ping" style={{ animationDelay: "0.5s"}}></div>
+                  </div>
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-outline-variant outline outline-2 outline-offset-2 outline-outline/30"></div>
+                    <span className="text-[8px] font-label-mono text-outline-variant uppercase tracking-widest">Target Endpoints</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
           </div>
-        )}
-      </AnimatePresence>
+          
+          {/* Key Metrics Row */}
+          <div className="grid grid-cols-4 gap-6 mb-6">
+            <div className="bg-[#11131b] border border-[#282a32] rounded-xl p-4 shadow-md">
+              <div className="text-[9px] font-label-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1">Total Assets (Avg)</div>
+              <div className="text-xl font-display-kpi font-bold text-on-surface mb-1">${totalAssets.toLocaleString("en-US")}</div>
+              <div className="text-[9px] font-bold text-risk-high flex items-center gap-1 uppercase tracking-wider">
+                <span className="material-symbols-outlined text-[10px]">trending_up</span> +142% Spikes
+              </div>
+            </div>
+            <div className="bg-[#11131b] border border-[#282a32] rounded-xl p-4 shadow-md">
+              <div className="text-[9px] font-label-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1">Total Outflows</div>
+              <div className="text-xl font-display-kpi font-bold text-[#16A34A] mb-1">${totalOutflows.toLocaleString("en-US")}</div>
+              <div className="text-[9px] font-bold text-[#16A34A] flex items-center gap-1 uppercase tracking-wider">
+                <span className="material-symbols-outlined text-[10px]">update</span> In 15 min Window
+              </div>
+            </div>
+            <div className="bg-[#11131b] border border-[#282a32] rounded-xl p-4 shadow-md">
+              <div className="text-[9px] font-label-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1">Velocity Index</div>
+              <div className="text-xl font-display-kpi font-bold text-on-surface mb-1">{velocity}<span className="text-xs text-outline font-label-mono">/10</span></div>
+              <div className="text-[9px] font-bold text-outline-variant uppercase tracking-wider">High Frequency Burst</div>
+            </div>
+            <div className="bg-[#11131b] border border-[#282a32] rounded-xl p-4 shadow-md">
+              <div className="text-[9px] font-label-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1">Avg. Balance</div>
+              <div className="text-xl font-display-kpi font-bold text-on-surface mb-1">${avgBalance.toFixed(2)}</div>
+              <div className="text-[9px] font-bold text-outline-variant uppercase tracking-wider">Rapid Depletion Cycle</div>
+            </div>
+          </div>
+          
+          {/* Bottom Grid */}
+          <div className="grid grid-cols-12 gap-6">
+            
+            {/* Left Column (Table & Chart) */}
+            <div className="col-span-12 xl:col-span-8 flex flex-col gap-6">
+              
+              {/* Volume Spikes Chart */}
+              <div className="bg-[#11131b] border border-[#282a32] rounded-2xl p-5 shadow-lg">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className="text-[11px] font-label-mono font-bold text-on-surface uppercase tracking-widest">Volume Spikes</h3>
+                    <p className="text-[10px] text-outline-variant mt-1">Transaction volume anomaly detection over time.</p>
+                  </div>
+                </div>
+                <div className="h-48">
+                  <TimelineChart data={timelineData} />
+                </div>
+              </div>
+
+              {/* Transaction Table */}
+              <div className="bg-[#11131b] border border-[#282a32] rounded-2xl p-5 shadow-lg flex-1">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                  <div>
+                    <h3 className="text-[11px] font-label-mono font-bold text-on-surface uppercase tracking-widest">Transaction Intelligence</h3>
+                    <p className="text-[10px] text-outline-variant mt-1">Detailed ledger analysis and ML flagging for this entity.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-outline bg-[#1d1f27] border border-[#32343d] px-3 py-1.5 rounded-lg hover:text-on-surface transition-colors">
+                      <span className="material-symbols-outlined text-[14px]">filter_list</span> Filter
+                    </button>
+                    <button className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-outline bg-[#1d1f27] border border-[#32343d] px-3 py-1.5 rounded-lg hover:text-on-surface transition-colors">
+                      <span className="material-symbols-outlined text-[14px]">search</span> Search
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs whitespace-nowrap">
+                    <thead>
+                      <tr className="border-b border-[#282a32] text-[9px] font-label-mono uppercase tracking-widest text-outline-variant font-bold">
+                        <th className="py-3 px-3 font-medium">Type</th>
+                        <th className="py-3 px-3 font-medium">Date & Time</th>
+                        <th className="py-3 px-3 font-medium">Reference ID</th>
+                        <th className="py-3 px-3 font-medium">Description</th>
+                        <th className="py-3 px-3 font-medium text-right">Amount</th>
+                        <th className="py-3 px-3 font-medium text-center">AI Flag</th>
+                        <th className="py-3 px-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#282a32]/50 text-[11px] font-medium text-on-surface">
+                      <tr className="hover:bg-[#191b23] transition-colors group cursor-pointer">
+                        <td className="py-3 px-3">
+                          <div className="w-8 h-8 rounded-full bg-[#3b82f6]/10 text-[#3b82f6] flex items-center justify-center">
+                            <span className="material-symbols-outlined text-[16px]">sync_alt</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-label-mono text-outline-variant text-[10px]">2023-11-20<br/>14:25:10</td>
+                        <td className="py-3 px-3 font-label-mono text-[10px]">UPI/TXN/882199</td>
+                        <td className="py-3 px-3">Inbound Transfer via<br/><span className="text-outline-variant">Unknown App</span></td>
+                        <td className="py-3 px-3 text-right text-[#16A34A] font-bold font-label-mono">+$4,500.00</td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="inline-flex px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-[#06b6d4]/10 text-[#06b6d4] border border-[#06b6d4]/20 shadow-sm">Layering</span>
+                        </td>
+                        <td className="py-3 px-3 text-right text-outline group-hover:text-primary transition-colors"><span className="material-symbols-outlined text-[18px]">arrow_forward</span></td>
+                      </tr>
+                      <tr className="hover:bg-[#191b23] transition-colors group cursor-pointer">
+                        <td className="py-3 px-3">
+                          <div className="w-8 h-8 rounded-full bg-risk-high/10 text-risk-high flex items-center justify-center">
+                            <span className="material-symbols-outlined text-[16px]">local_atm</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-label-mono text-outline-variant text-[10px]">2023-11-20<br/>14:26:05</td>
+                        <td className="py-3 px-3 font-label-mono text-[10px]">ATM/WD/1992</td>
+                        <td className="py-3 px-3">Cash Withdrawal - Mumbai<br/><span className="text-outline-variant">E.</span></td>
+                        <td className="py-3 px-3 text-right text-on-surface font-bold font-label-mono">-$1,450.00</td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="inline-flex px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-risk-critical/10 text-risk-critical border border-risk-critical/20 shadow-sm">Smurfing</span>
+                        </td>
+                        <td className="py-3 px-3 text-right text-outline group-hover:text-primary transition-colors"><span className="material-symbols-outlined text-[18px]">arrow_forward</span></td>
+                      </tr>
+                      <tr className="hover:bg-[#191b23] transition-colors group cursor-pointer">
+                        <td className="py-3 px-3">
+                          <div className="w-8 h-8 rounded-full bg-[#16A34A]/10 text-[#16A34A] flex items-center justify-center">
+                            <span className="material-symbols-outlined text-[16px]">payments</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-label-mono text-outline-variant text-[10px]">2023-11-19<br/>09:10:12</td>
+                        <td className="py-3 px-3 font-label-mono text-[10px]">UPI/TXN/771822</td>
+                        <td className="py-3 px-3">Structuring Attempt<br/><span className="text-outline-variant">Cluster</span></td>
+                        <td className="py-3 px-3 text-right text-[#16A34A] font-bold font-label-mono">+$9,900.00</td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="inline-flex px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-[#06b6d4]/10 text-[#06b6d4] border border-[#06b6d4]/20 shadow-sm">Structuring</span>
+                        </td>
+                        <td className="py-3 px-3 text-right text-outline group-hover:text-primary transition-colors"><span className="material-symbols-outlined text-[18px]">arrow_forward</span></td>
+                      </tr>
+                      <tr className="hover:bg-[#191b23] transition-colors group cursor-pointer">
+                        <td className="py-3 px-3">
+                          <div className="w-8 h-8 rounded-full bg-[#a855f7]/10 text-[#a855f7] flex items-center justify-center">
+                            <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-label-mono text-outline-variant text-[10px]">2023-11-18<br/>23:45:00</td>
+                        <td className="py-3 px-3 font-label-mono text-[10px]">BLL/CR/66120</td>
+                        <td className="py-3 px-3">Merchant Payback<br/><span className="text-outline-variant">(Simulated)</span></td>
+                        <td className="py-3 px-3 text-right text-[#16A34A] font-bold font-label-mono">+$2,200.00</td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="inline-flex px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-[#a855f7]/10 text-[#a855f7] border border-[#a855f7]/20 shadow-sm">Circular Flow</span>
+                        </td>
+                        <td className="py-3 px-3 text-right text-outline group-hover:text-primary transition-colors"><span className="material-symbols-outlined text-[18px]">arrow_forward</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              
+              {/* Account Timeline */}
+              <div className="bg-[#11131b] border border-[#282a32] rounded-2xl p-5 shadow-lg h-[220px] flex flex-col">
+                <h3 className="text-[11px] font-label-mono font-bold text-on-surface uppercase tracking-widest mb-2">Account Timeline (Activity Spikes)</h3>
+                <div className="flex-1 w-full h-full min-h-[150px]">
+                  <TimelineChart data={timelineData} />
+                </div>
+              </div>
+              
+            </div>
+            
+            {/* Right Column (Indicators & Intel) */}
+            <div className="col-span-12 xl:col-span-4 flex flex-col gap-6">
+              
+              {/* Risk Indicators */}
+              <div className="bg-[#11131b] border border-risk-high/30 rounded-2xl p-5 shadow-[0_0_15px_rgba(249,115,22,0.03)] relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-risk-high/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
+                <h3 className="flex items-center gap-2 text-[11px] font-label-mono font-bold text-risk-high uppercase tracking-widest mb-4 z-10 relative">
+                  <span className="material-symbols-outlined text-[16px]">warning</span>
+                  Risk Indicators
+                </h3>
+                
+                <div className="flex flex-col gap-3 z-10 relative">
+                  <div className="flex justify-between items-center bg-[#191b23] px-3 py-2.5 rounded-lg border border-[#282a32]">
+                    <span className="text-xs font-semibold text-on-surface">Rapid ATM Cash-Out</span>
+                    <span className="px-2 py-0.5 bg-risk-critical text-white text-[8px] font-bold uppercase tracking-wider rounded">98%</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-[#191b23] px-3 py-2.5 rounded-lg border border-[#282a32]">
+                    <span className="text-xs font-semibold text-on-surface">Structuring Index</span>
+                    <span className="px-2 py-0.5 bg-risk-high text-white text-[8px] font-bold uppercase tracking-wider rounded">84%</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-[#191b23] px-3 py-2.5 rounded-lg border border-[#282a32]">
+                    <span className="text-xs font-semibold text-on-surface">Dark Web Exposure</span>
+                    <span className="px-2 py-0.5 bg-[#a855f7] text-white text-[8px] font-bold uppercase tracking-wider rounded">MATCH</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-[#191b23] px-3 py-2.5 rounded-lg border border-[#282a32]">
+                    <span className="text-xs font-semibold text-on-surface">Device Fingerprint</span>
+                    <span className="px-2 py-0.5 bg-outline-variant text-on-surface text-[8px] font-bold uppercase tracking-wider rounded">Cloned</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Police Intelligence */}
+              <div className="bg-[#11131b] border border-[#06b6d4]/30 rounded-2xl p-5 shadow-[0_0_15px_rgba(6,182,212,0.03)] flex-1 relative overflow-hidden flex flex-col">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[#06b6d4]/5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/3 pointer-events-none"></div>
+                <h3 className="flex items-center gap-2 text-[11px] font-label-mono font-bold text-[#06b6d4] uppercase tracking-widest mb-4 z-10 relative">
+                  <span className="material-symbols-outlined text-[16px]">local_police</span>
+                  Police Intelligence
+                </h3>
+                
+                <div className="space-y-4 z-10 relative flex-1 flex flex-col">
+                  <div>
+                    <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-0.5">FIR CASE NUMBER</div>
+                    <div className="text-xs font-bold text-[#06b6d4]">FIR-MUM-49-2023</div>
+                  </div>
+                  <div className="flex justify-between">
+                    <div>
+                      <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-0.5">STATUS</div>
+                      <div className="text-xs font-bold text-on-surface">Investigation</div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-0.5">PRIORITY</div>
+                      <div className="text-xs font-bold text-risk-high">P1 - HIGH</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-0.5">LEAD OFFICER</div>
+                    <div className="text-xs font-bold text-on-surface">Inspector Rajesh V.</div>
+                  </div>
+                  
+                  <div className="mt-auto pt-4">
+                    <button className="w-full py-2.5 border border-[#06b6d4]/40 bg-[#06b6d4]/10 text-[#06b6d4] text-[10px] font-bold uppercase tracking-wider rounded-xl hover:bg-[#06b6d4]/20 transition-colors">
+                      Open Police Portal
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Linked Entities */}
+              <div className="bg-[#11131b] border border-[#282a32] rounded-2xl p-5 shadow-lg">
+                <h3 className="text-[11px] font-label-mono font-bold text-on-surface uppercase tracking-widest mb-3">Linked Entities (3)</h3>
+                <div className="flex gap-2 mb-3">
+                  <div className="w-8 h-8 rounded bg-[#1d1f27] border border-[#32343d] flex items-center justify-center text-xs font-bold text-outline-variant">JS</div>
+                  <div className="w-8 h-8 rounded bg-[#1d1f27] border border-[#32343d] flex items-center justify-center text-xs font-bold text-outline-variant">MR</div>
+                  <div className="w-8 h-8 rounded bg-[#1d1f27] border border-[#32343d] flex items-center justify-center text-xs font-bold text-outline-variant">AK</div>
+                </div>
+                <p className="text-[10px] text-outline-variant leading-relaxed">
+                  These entities share the same physical address and IP subnet during cash-out bursts.
+                </p>
+              </div>
+              
+            </div>
+            
+          </div>
+        </div>
+
+        {/* Investigation Panel (Right Sidebar) */}
+        <div className="w-full xl:w-[320px] bg-[#11131b] border-t xl:border-t-0 xl:border-l border-[#282a32] flex flex-col flex-shrink-0 relative">
+          <div className="p-5 border-b border-[#282a32] flex justify-between items-start">
+            <div>
+              <h2 className="text-[13px] font-label-mono font-bold text-on-surface uppercase tracking-widest mb-1">Investigation Panel</h2>
+              <div className="flex items-center gap-1.5 text-[9px] font-label-mono font-bold uppercase tracking-widest">
+                <span className="text-primary">CASE {id.substring(0, 7)}</span>
+                <span className="text-outline-variant">|</span>
+                <span className="text-risk-low">ACTIVE</span>
+              </div>
+            </div>
+            <button className="text-outline hover:text-on-surface transition-colors">
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-5 space-y-6 scrollbar-thin scrollbar-thumb-[#282a32] scrollbar-track-transparent">
+            
+            {/* Officer Assigned */}
+            <div>
+              <h3 className="text-[9px] font-label-mono font-bold text-outline-variant uppercase tracking-widest mb-2">Officer Assigned</h3>
+              <div className="bg-[#191b23] border border-[#282a32] rounded-xl p-3 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-[#a855f7]/20 text-[#a855f7] border border-[#a855f7]/30 flex items-center justify-center text-xs font-bold">
+                  SK
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-on-surface">Sgt. Karthik</div>
+                  <div className="text-[10px] text-outline-variant">Cyber Cell Unit 4</div>
+                </div>
+                <button className="ml-auto text-outline hover:text-on-surface">
+                  <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+                </button>
+              </div>
+            </div>
+            
+            {/* Evidence Vault */}
+            <div>
+              <h3 className="text-[9px] font-label-mono font-bold text-outline-variant uppercase tracking-widest mb-2">Evidence Vault</h3>
+              <div className="space-y-2">
+                <div className="bg-[#191b23] border border-[#282a32] rounded-lg p-3 flex items-center gap-3 hover:border-outline-variant/50 cursor-pointer transition-colors">
+                  <span className="material-symbols-outlined text-primary text-[18px]">description</span>
+                  <span className="text-[11px] font-medium text-on-surface flex-1 truncate">Aadhaar_Masked.pdf</span>
+                  <span className="material-symbols-outlined text-[14px] text-outline">download</span>
+                </div>
+                <div className="bg-[#191b23] border border-[#282a32] rounded-lg p-3 flex items-center gap-3 hover:border-outline-variant/50 cursor-pointer transition-colors">
+                  <span className="material-symbols-outlined text-primary text-[18px]">description</span>
+                  <span className="text-[11px] font-medium text-on-surface flex-1 truncate">Bank_Statement_Q3.csv</span>
+                  <span className="material-symbols-outlined text-[14px] text-outline">download</span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Notes */}
+            <div className="flex-1 flex flex-col">
+              <h3 className="text-[9px] font-label-mono font-bold text-outline-variant uppercase tracking-widest mb-2">Notes</h3>
+              <textarea 
+                className="w-full h-[150px] bg-[#191b23] border border-[#282a32] rounded-xl p-3 text-xs text-on-surface focus:outline-none focus:border-primary transition-colors resize-none mb-3 placeholder:text-outline/50"
+                placeholder="Add investigation notes..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              ></textarea>
+              <button 
+                onClick={handleSaveNotes}
+                disabled={isSaving || !notes.trim()}
+                className="w-full py-2.5 bg-[#d8b4fe]/20 text-[#d8b4fe] border border-[#d8b4fe]/30 font-bold text-[10px] uppercase tracking-wider rounded-xl hover:bg-[#d8b4fe]/30 transition-colors mt-auto disabled:opacity-50">
+                {isSaving ? "Saving..." : "Save to Vault"}
+              </button>
+            </div>
+          </div>
+          
+          {/* Floating Timeline History Button */}
+          <div className="absolute bottom-6 right-6">
+             <button className="bg-risk-critical text-white border border-risk-critical shadow-[0_0_15px_rgba(220,38,38,0.3)] px-4 py-2 rounded-full flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider hover:bg-risk-critical/90 transition-all">
+                <span className="material-symbols-outlined text-[14px]">history</span>
+                Timeline History
+             </button>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }

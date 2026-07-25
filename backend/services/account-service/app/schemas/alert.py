@@ -6,17 +6,18 @@ class AlertResponse(BaseModel):
     """Schema for returning alert details."""
     id: uuid.UUID
     account_id: uuid.UUID
-    customer_id: uuid.UUID
-    alert_type: str
-    severity: str
+    customer_id: uuid.UUID | None = None
+    alert_type: str = "SUSPICIOUS_ACTIVITY"
+    severity: str = "MEDIUM"
     status: str
-    trigger_reason: str
-    score: float
+    score: float = 0.0
+    trigger_reason: str | None = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 
 class RuleResponse(BaseModel):
@@ -53,6 +54,7 @@ class GraphEdge(BaseModel):
     target: str
     label: str | None = None
     value: float | None = None
+    details: dict | None = None
 
 
 class GraphDataResponse(BaseModel):

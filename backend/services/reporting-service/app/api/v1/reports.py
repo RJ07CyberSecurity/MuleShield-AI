@@ -8,7 +8,7 @@ import structlog
 from fastapi import APIRouter, Depends, Request, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 from shared.database import get_db_session, Base, Transaction, Account, Alert, Case
@@ -38,9 +38,10 @@ class Report(Base):
 
 
 class ReportGenerateRequest(BaseModel):
-    account_id: str
+    account_id: str | None = None
     case_id: str | None = None
     report_type: str = "investigation"  # investigation, executive_summary
+    title: str | None = None
 
 
 class ReportResponse(BaseModel):
@@ -109,6 +110,7 @@ def generate_mock_report(account_number: str, balance: float, currency: str, ale
 
 @router.post("/generate", response_model=ResponseEnvelope[ReportResponse])
 async def generate_report(
+    request: Request,
     payload: ReportGenerateRequest,
     db: AsyncSession = Depends(get_db_session)
 ) -> ResponseEnvelope[ReportResponse]:
@@ -118,15 +120,25 @@ async def generate_report(
     logger.info("Generating report", account_id=payload.account_id, type=payload.report_type)
     
     # 1. Fetch Account
-    acct_uuid = uuid.UUID(payload.account_id)
-    acct_stmt = select(Account).where(Account.id == acct_uuid)
+    if payload.account_id:
+        acct_uuid = uuid.UUID(payload.account_id)
+        acct_stmt = select(Account).where(Account.id == acct_uuid)
+    else:
+        alert_stmt = select(Alert).order_by(Alert.score.desc()).limit(1)
+        alert_res = await db.execute(alert_stmt)
+        top_alert = alert_res.scalars().first()
+        if top_alert:
+            acct_stmt = select(Account).where(Account.id == top_alert.account_id)
+        else:
+            acct_stmt = select(Account).limit(1)
+            
     acct_res = await db.execute(acct_stmt)
     account = acct_res.scalars().first()
     
     if not account:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Bank account record not found."
+            detail="Bank account record not found or no accounts available."
         )
         
     # 2. Fetch Transactions
@@ -253,6 +265,7 @@ async def generate_report(
     return ResponseEnvelope(
         success=True,
         message="Compliance forensic report compiled successfully.",
+        request_id=getattr(request.state, "request_id", str(uuid.uuid4())),
         data=ReportResponse(
             report_id=str(db_report.id),
             account_id=str(account.id),
@@ -265,6 +278,35 @@ async def generate_report(
             recommendations=db_report.recommendations
         )
     )
+@router.get("", response_model=ResponseEnvelope[list[ReportResponse]])
+async def list_reports(
+    request: Request,
+    db: AsyncSession = Depends(get_db_session)
+):
+    result = await db.execute(select(Report))
+    reports = result.scalars().all()
+    
+    data = []
+    for r in reports:
+        data.append(ReportResponse(
+            report_id=str(r.id),
+            account_id=str(r.account_id),
+            case_id=str(r.case_id) if r.case_id else None,
+            report_type=r.report_type,
+            executive_summary=r.executive_summary,
+            narrative=r.narrative,
+            evidence=json.loads(r.evidence_json),
+            risk_factors=json.loads(r.risk_factors_json),
+            recommendations=r.recommendations
+        ))
+        
+    return ResponseEnvelope(
+        success=True,
+        message="Retrieved reports history.",
+        request_id=getattr(request.state, "request_id", str(uuid.uuid4())),
+        data=data
+    )
+
 
 
 @router.get("/{report_id}/download")

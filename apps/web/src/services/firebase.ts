@@ -58,9 +58,15 @@ export async function signInWithGithub() {
   }
 }
 
-// Phone Authentication OTP dispatch helpers
 export function createRecaptchaVerifier(containerId: string): RecaptchaVerifier {
-  return new RecaptchaVerifier(auth, containerId, {
+  if (typeof window !== "undefined") {
+    const existing = (window as any).recaptchaVerifier;
+    if (existing) {
+      return existing;
+    }
+  }
+
+  const verifier = new RecaptchaVerifier(auth, containerId, {
     size: "invisible",
     callback: () => {
       // reCAPTCHA solved, direct verification follows
@@ -69,16 +75,37 @@ export function createRecaptchaVerifier(containerId: string): RecaptchaVerifier 
       console.warn("reCAPTCHA expired. Reset required.");
     }
   });
+
+  if (typeof window !== "undefined") {
+    (window as any).recaptchaVerifier = verifier;
+  }
+
+  return verifier;
 }
 
 export async function sendOtpToPhone(
   phoneNumber: string, 
   verifier: RecaptchaVerifier
 ): Promise<ConfirmationResult> {
+  const originalError = console.error;
   try {
+    // Silence Firebase's internal console.error for this specific expected failure
+    // so it doesn't trigger the Next.js development error overlay.
+    console.error = (...args: any[]) => {
+      const msg = args.join(" ");
+      if (msg.includes("auth/operation-not-allowed") || msg.includes("auth/invalid-app-credential")) {
+        return;
+      }
+      originalError.apply(console, args);
+    };
+    
     return await signInWithPhoneNumber(auth, phoneNumber, verifier);
-  } catch (error) {
-    console.error("Phone OTP dispatch failed", error);
+  } catch (error: any) {
+    if (error.code !== "auth/operation-not-allowed") {
+      originalError("Phone OTP dispatch failed", error);
+    }
     throw error;
+  } finally {
+    console.error = originalError;
   }
 }

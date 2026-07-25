@@ -8,9 +8,13 @@ import {
   signInWithGoogle,
   signInWithGithub,
   auth,
-  createRecaptchaVerifier,
-  sendOtpToPhone,
 } from "../../services/firebase";
+import {
+  sendPhoneOtp,
+  verifyPhoneOtp,
+  type PhoneOtpSession,
+} from "../../services/phone-auth";
+import { useAuthStore } from "../../store/useAuthStore";
 
 // Helper: store tokens and set cookie for middleware route protection
 function storeAuthTokens(access_token: string, refresh_token: string) {
@@ -22,6 +26,7 @@ function storeAuthTokens(access_token: string, refresh_token: string) {
 
 export default function LoginPage() {
   const router = useRouter();
+  const initializeAuth = useAuthStore((state) => state.initialize);
 
   // Login modes: "email" | "phone" | "direct"
   const [loginMethod, setLoginMethod] = useState<"email" | "phone" | "direct">("direct");
@@ -35,18 +40,23 @@ export default function LoginPage() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
-  const [confirmationResult, setConfirmationResult] = useState<any | null>(null);
+  const [phoneSession, setPhoneSession] = useState<PhoneOtpSession | null>(null);
+  const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
 
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  
+  const [isMfaStep, setIsMfaStep] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
 
   // Clear states on method switch
   useEffect(() => {
     setError(null);
     setOtpSent(false);
     setOtp("");
-    setConfirmationResult(null);
+    setPhoneSession(null);
+    setDevOtpHint(null);
   }, [loginMethod]);
 
   // ── Direct DB Login (no Firebase) ──
@@ -54,19 +64,48 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
+
     try {
       const response = await apiClient.post<any>("/api/v1/auth/login", {
         email,
         password,
       });
-      if (response?.success && response?.data?.access_token) {
-        storeAuthTokens(response.data.access_token, response.data.refresh_token);
-        router.push("/dashboard");
+      if (response?.success) {
+        if (response.data.is_mfa_required) {
+          setIsMfaStep(true);
+        } else if (response.data.access_token) {
+          storeAuthTokens(response.data.access_token, response.data.refresh_token);
+          await initializeAuth();
+          router.push("/dashboard");
+        }
       } else {
         setError(response?.message || "Invalid email or password.");
       }
     } catch (err: any) {
       setError(err.message || "Login failed. Check your credentials.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMfaVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+    try {
+      const response = await apiClient.post<any>("/api/v1/auth/mfa/login-verify", {
+        email,
+        code: mfaCode
+      });
+      if (response?.success && response.data.access_token) {
+        storeAuthTokens(response.data.access_token, response.data.refresh_token);
+        await initializeAuth();
+        router.push("/dashboard");
+      } else {
+        setError(response?.message || "Invalid verification code.");
+      }
+    } catch (err: any) {
+      setError(err.message || "MFA verification failed.");
     } finally {
       setIsLoading(false);
     }
@@ -86,6 +125,7 @@ export default function LoginPage() {
       });
       if (response?.success) {
         storeAuthTokens(response.data.access_token, response.data.refresh_token);
+        await initializeAuth();
         router.push("/dashboard");
       } else {
         setError(response?.message || "SSO Sign-In failed");
@@ -116,6 +156,7 @@ export default function LoginPage() {
 
       if (response?.success) {
         storeAuthTokens(response.data.access_token, response.data.refresh_token);
+        await initializeAuth();
         router.push("/dashboard");
       } else {
         setError(response?.message || "Firebase session registration failed");
@@ -135,12 +176,23 @@ export default function LoginPage() {
       return;
     }
     setError(null);
+    setDevOtpHint(null);
     setIsLoading(true);
     try {
-      const verifier = createRecaptchaVerifier("recaptcha-container");
-      const confirmResult = await sendOtpToPhone(phoneNumber.trim(), verifier);
-      setConfirmationResult(confirmResult);
+      let formattedPhone = phoneNumber.trim();
+      if (!formattedPhone.startsWith("+")) {
+        // Simple fallback to prepend + if it's missing but only contains digits
+        if (/^\d+$/.test(formattedPhone)) {
+          formattedPhone = "+" + formattedPhone;
+        }
+      }
+      
+      const session = await sendPhoneOtp(formattedPhone);
+      setPhoneSession(session);
       setOtpSent(true);
+      if (session.provider === "backend" && session.devCode) {
+        setDevOtpHint(session.devCode);
+      }
     } catch (err: any) {
       setError(
         err.message ||
@@ -153,28 +205,42 @@ export default function LoginPage() {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otp.trim() || !confirmationResult) {
+    if (!otp.trim() || !phoneSession) {
       setError("Please enter the verification code.");
+      return;
+    }
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setError("Verification code must be exactly 6 digits.");
       return;
     }
     setError(null);
     setIsLoading(true);
     try {
-      const userCredential = await confirmationResult.confirm(otp.trim());
-      const idToken = await userCredential.user.getIdToken();
-
-      const response = await apiClient.post<any>("/api/v1/auth/firebase-login", {
-        id_token: idToken,
-      });
-
-      if (response?.success) {
-        storeAuthTokens(response.data.access_token, response.data.refresh_token);
-        router.push("/dashboard");
-      } else {
-        setError(response?.message || "Firebase session registration failed");
-      }
+      const tokens = await verifyPhoneOtp(phoneSession, otp.trim());
+      storeAuthTokens(tokens.access_token, tokens.refresh_token);
+      await initializeAuth();
+      router.push("/dashboard");
     } catch (err: any) {
       setError(err.message || "Invalid or expired verification code.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setError(null);
+    setDevOtpHint(null);
+    setOtp("");
+    setIsLoading(true);
+    try {
+      const p = (phoneSession as any)?.phoneNumber || phoneNumber;
+      const session = await sendPhoneOtp(p);
+      setPhoneSession(session);
+      if (session.provider === "backend" && session.devCode) {
+        setDevOtpHint(session.devCode);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to resend verification code.");
     } finally {
       setIsLoading(false);
     }
@@ -289,8 +355,59 @@ export default function LoginPage() {
             ))}
           </div>
 
-          {/* ── Direct DB Login Form ── */}
+          {/* ── Direct DB Form ── */}
           {loginMethod === "direct" && (
+            isMfaStep ? (
+              <form onSubmit={handleMfaVerify} className="space-y-6">
+                {error && (
+                  <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
+                    {error}
+                  </div>
+                )}
+                
+                <div className="space-y-2">
+                  <label className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
+                    Verification Code (Email)
+                  </label>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">
+                      pin
+                    </span>
+                    <input
+                      type="text"
+                      required
+                      disabled={isLoading}
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
+                      maxLength={6}
+                      placeholder="Enter 6-digit code sent to your email"
+                      className="w-full bg-[#0c0e17] border border-outline-variant/30 rounded-xl pl-12 pr-4 py-3.5 text-body-sm text-on-surface focus:outline-none focus:border-primary/50 disabled:opacity-50 tracking-widest text-center font-bold"
+                    />
+                  </div>
+                  <p className="text-xs text-on-surface-variant mt-2 text-center">
+                    A code was sent to {email}. It will expire in 5 minutes.
+                  </p>
+                </div>
+                
+                <button
+                  type="submit"
+                  disabled={isLoading || mfaCode.length !== 6}
+                  className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isLoading ? "Verifying..." : "Verify Code"}
+                </button>
+                
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => { setIsMfaStep(false); setMfaCode(""); }}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Back to Login
+                  </button>
+                </div>
+              </form>
+            ) : (
             <form onSubmit={handleDirectLogin} className="space-y-6">
               {error && (
                 <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
@@ -372,6 +489,7 @@ export default function LoginPage() {
                 {isLoading ? "Signing In..." : "Sign In"}
               </button>
             </form>
+            )
           )}
 
           {/* ── Firebase Email Form ── */}
@@ -484,15 +602,32 @@ export default function LoginPage() {
                     />
                   </div>
                   <div className="flex justify-between items-center text-[10px] pt-1">
-                    <span className="text-on-surface-variant">Code sent to {phoneNumber}</span>
-                    <button
-                      type="button"
-                      onClick={() => setOtpSent(false)}
-                      className="text-primary hover:underline font-bold"
-                    >
-                      Change Number
-                    </button>
+                    <span className="text-on-surface-variant">Code sent to {(phoneSession as any)?.phoneNumber || phoneNumber}</span>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={handleResendOtp}
+                        className="text-on-surface hover:text-primary transition-colors font-bold"
+                      >
+                        Resend Code
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOtpSent(false);
+                          setDevOtpHint(null);
+                        }}
+                        className="text-primary hover:underline font-bold"
+                      >
+                        Change Number
+                      </button>
+                    </div>
                   </div>
+                  {devOtpHint && (
+                    <p className="text-[10px] text-primary/90 leading-normal">
+                      Dev mode: use OTP code <span className="font-bold">{devOtpHint}</span>
+                    </p>
+                  )}
                 </div>
               )}
               <div id="recaptcha-container" className="my-2 flex justify-center"></div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { apiClient } from "../../services/api-client";
 import { useUIStore } from "../../store/useUIStore";
 
@@ -8,6 +8,30 @@ export default function ReportsPage() {
   const { addToast } = useUIStore();
   const [loadingReport, setLoadingReport] = useState<string | null>(null);
   const [generatedReports, setGeneratedReports] = useState<Record<string, string>>({});
+  const [history, setHistory] = useState<any[]>([]);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await apiClient.get<any>("/api/v1/reports");
+      if (res?.data && Array.isArray(res.data)) {
+        setHistory(res.data.map((r: any) => ({
+          id: r.report_id,
+          name: `REP-${r.report_type}-${r.report_id.slice(0, 4).toUpperCase()}`,
+          type: r.report_type,
+          author: "Current User",
+          date: "Just now", // In a real app we'd use r.created_at
+          status: "Complete",
+          statusColor: "text-risk-low bg-risk-low/10 border-risk-low/20"
+        })));
+      }
+    } catch (err) {
+      console.error("Failed to fetch reports history", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
 
   const reportCards = [
     {
@@ -90,48 +114,7 @@ export default function ReportsPage() {
     },
   ];
 
-  const history = [
-    {
-      name: "REP-INTEL-2023-1025-A",
-      type: "Investigation",
-      author: "A. Vance",
-      date: "2023-10-25 16:45",
-      status: "Complete",
-      statusColor: "text-risk-low bg-risk-low/10 border-risk-low/20",
-    },
-    {
-      name: "SAR-FILING-US-00921",
-      type: "SAR Report",
-      author: "M. Chen",
-      date: "2023-10-25 14:05",
-      status: "Pending",
-      statusColor: "text-risk-medium bg-risk-medium/10 border-risk-medium/20",
-    },
-    {
-      name: "TX-AUDIT-Q3-23-FIN",
-      type: "Transaction",
-      author: "System (Auto)",
-      date: "2023-10-25 09:12",
-      status: "Complete",
-      statusColor: "text-risk-low bg-risk-low/10 border-risk-low/20",
-    },
-    {
-      name: "CASE-8821-EVIDENCE",
-      type: "Case Report",
-      author: "L. Rodriguez",
-      date: "2023-10-24 17:30",
-      status: "Complete",
-      statusColor: "text-risk-low bg-risk-low/10 border-risk-low/20",
-    },
-    {
-      name: "RISK-EVAL-GLOBAL-33",
-      type: "Risk Report",
-      author: "A. Vance",
-      date: "2023-10-24 11:15",
-      status: "Complete",
-      statusColor: "text-risk-low bg-risk-low/10 border-risk-low/20",
-    },
-  ];
+
 
   const handleGenerate = async (title: string) => {
     setLoadingReport(title);
@@ -159,6 +142,9 @@ export default function ReportsPage() {
         const reportId = response.data.report_id;
         setGeneratedReports((prev) => ({ ...prev, [title]: reportId }));
         addToast(`Report "${title}" generated successfully! ID: ${reportId.slice(0, 8)}`, "success");
+        await fetchHistory(); // Refresh the list
+        // Automatically trigger the download for the generated report
+        await handleDownload(title, reportId);
       } else if (response?.data?.content) {
         addToast(`Report "${title}" compiled and ready.`, "success");
       } else {
@@ -217,7 +203,7 @@ export default function ReportsPage() {
 
         <div className="flex gap-3">
           <button
-            onClick={() => addToast("Export history triggered.", "info")}
+            onClick={() => document.getElementById("recent-history")?.scrollIntoView({ behavior: "smooth" })}
             className="px-4 py-2.5 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 rounded-xl text-body-sm font-semibold transition-colors flex items-center gap-2 text-on-surface"
           >
             <span className="material-symbols-outlined text-sm">history</span>
@@ -261,13 +247,22 @@ export default function ReportsPage() {
 
             <div className="flex justify-between items-center pt-4 border-t border-outline-variant/10 text-[10px] font-label-mono">
               <span className="text-on-surface-variant">Last Gen: {card.lastGen}</span>
-              <button
-                disabled={loadingReport !== null}
-                onClick={() => handleGenerate(card.title)}
-                className="text-primary font-bold hover:underline"
-              >
-                {loadingReport === card.title ? "Compiling..." : "Generate"}
-              </button>
+              {generatedReports[card.title] ? (
+                <button
+                  onClick={() => handleDownload(card.title, generatedReports[card.title])}
+                  className="text-primary font-bold hover:underline flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[12px]">download</span> Download
+                </button>
+              ) : (
+                <button
+                  disabled={loadingReport !== null}
+                  onClick={() => handleGenerate(card.title)}
+                  className="text-primary font-bold hover:underline"
+                >
+                  {loadingReport === card.title ? "Compiling..." : "Generate"}
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -321,7 +316,7 @@ export default function ReportsPage() {
       </section>
 
       {/* Recent Generation History */}
-      <section className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-6">
+      <section id="recent-history" className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-6">
         <div className="flex justify-between items-center">
           <h3 className="font-headline-sm text-sm font-bold text-on-surface uppercase tracking-wider flex items-center gap-2">
             <span className="material-symbols-outlined text-base">restore</span>
@@ -342,7 +337,7 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody>
-              {history.map((h, i) => (
+              {history.length > 0 ? history.map((h, i) => (
                 <tr
                   key={i}
                   className="border-b border-outline-variant/10 text-xs hover:bg-surface-container-high/20 transition-colors"
@@ -357,23 +352,22 @@ export default function ReportsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-4 text-right">
-                    <div className="flex justify-end gap-3 text-on-surface-variant">
-                      <button
-                        onClick={() => addToast(`Reviewing report: ${h.name}`, "info")}
-                        className="material-symbols-outlined text-base hover:text-primary"
-                      >
-                        visibility
-                      </button>
-                      <button
-                        onClick={() => handleDownload(h.name)}
-                        className="material-symbols-outlined text-base hover:text-primary"
-                      >
-                        download
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => handleDownload(h.name, h.id)}
+                      className="px-3 py-1.5 bg-surface-container-high hover:bg-primary/20 hover:text-primary border border-outline-variant/30 rounded-lg text-body-sm font-semibold transition-colors text-on-surface flex items-center gap-1 inline-flex"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">download</span>
+                      Download
+                    </button>
                   </td>
                 </tr>
-              ))}
+              )) : (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-on-surface-variant">
+                    No recent reports generated.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

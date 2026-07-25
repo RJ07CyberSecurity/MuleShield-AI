@@ -43,7 +43,9 @@ class FeatureEngineeringPipeline:
             "income_to_txn_ratio": 0.0,
             "network_centrality_score": 0.0,
             "days_since_account_open": 365,  # default
-            "dormancy_then_spike_flag": 0
+            "dormancy_then_spike_flag": 0,
+            "structuring_flag": 0,
+            "rapid_fan_out_flag": 0
         }
 
         try:
@@ -100,6 +102,16 @@ class FeatureEngineeringPipeline:
             features["unique_senders_30d"] = len(senders_30d)
             features["unique_receivers_30d"] = len(receivers_30d)
 
+            # Channel specific features for 24h
+            swift_outgoing_24h = [tx for tx in outgoing_24h if tx.payment_channel == "SWIFT"]
+            features["swift_outgoing_amt_24h"] = sum(float(tx.amount) for tx in swift_outgoing_24h)
+            
+            p2p_outgoing_24h = [tx for tx in outgoing_24h if tx.payment_channel == "P2P"]
+            features["p2p_txn_count_24h"] = len(p2p_outgoing_24h)
+
+            ach_outgoing_24h = [tx for tx in outgoing_24h if tx.payment_channel == "ACH"]
+            features["ach_txn_count_24h"] = len(ach_outgoing_24h)
+
             # Percentage night transactions (10 PM to 6 AM)
             if all_txs:
                 night_txs = 0
@@ -146,6 +158,26 @@ class FeatureEngineeringPipeline:
                     hold_times.append(diff)
             if hold_times:
                 features["avg_holding_time_minutes"] = sum(hold_times) / len(hold_times)
+
+            # Structuring (Smurfing) Detection: Multiple deposits in 7 days summing to a large amount, each sub-threshold
+            inbounds_7d = [ib for ib in inbounds if ib.timestamp.replace(tzinfo=timezone.utc) >= t_7d]
+            if len(inbounds_7d) >= 3:
+                total_in_7d = sum(float(ib.amount) for ib in inbounds_7d)
+                if total_in_7d > 5000.0 and all(float(ib.amount) < 5000.0 for ib in inbounds_7d):
+                    features["structuring_flag"] = 1
+
+            # Rapid Fan-out Detection: Splitting received funds to multiple distinct receivers quickly
+            for ib in inbounds:
+                if float(ib.amount) > 1000.0:
+                    fan_out_window_end = ib.timestamp + timedelta(hours=24)
+                    related_outbounds = [
+                        ob for ob in outbounds 
+                        if ib.timestamp <= ob.timestamp <= fan_out_window_end
+                    ]
+                    unique_targets = {ob.receiver_account for ob in related_outbounds}
+                    if len(unique_targets) >= 3:
+                        features["rapid_fan_out_flag"] = 1
+                        break
 
             # Device sessions metrics (Customer level)
             if customer:

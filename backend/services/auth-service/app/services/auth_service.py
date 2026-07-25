@@ -21,6 +21,16 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+# In-memory OTP sessions for local/dev phone auth when Firebase Phone provider is disabled.
+_phone_otp_sessions: dict[str, dict[str, Any]] = {}
+
+# In-memory token store for Password Reset flow
+_password_reset_tokens: dict[str, dict[str, Any]] = {}
+
+# In-memory OTP store for Email MFA flow
+_email_otp_sessions: dict[str, dict[str, Any]] = {}
+
+
 class TOTPHelper:
     """
     RFC 6238 Time-Based One-Time Password (TOTP) pure-python helper.
@@ -130,6 +140,45 @@ class AuthService:
         # MFA required branch
         if user.is_mfa_enabled:
             logger.info("Login step 1 success; MFA challenge required", email=email)
+            import random
+            import time
+            import smtplib
+            import os
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            
+            # Generate 6-digit OTP
+            otp_code = str(random.randint(100000, 999999))
+            
+            # Store in session (expires in 5 minutes)
+            _email_otp_sessions[email] = {
+                "code": otp_code,
+                "expires_at": time.time() + 300
+            }
+            
+            # Send Email
+            smtp_host = os.environ.get("SMTP_HOST", "")
+            smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+            smtp_user = os.environ.get("SMTP_USER", "")
+            smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+            if smtp_host and smtp_user:
+                try:
+                    msg = MIMEMultipart("alternative")
+                    msg['Subject'] = "MuleShield AI - MFA Login Code"
+                    msg['From'] = smtp_user
+                    msg['To'] = email
+                    text = f"Your MuleShield AI Login Code is: {otp_code}"
+                    html = f"<p>Your MuleShield AI Login Code is: <b>{otp_code}</b></p>"
+                    msg.attach(MIMEText(text, 'plain'))
+                    msg.attach(MIMEText(html, 'html'))
+                    server = smtplib.SMTP(smtp_host, smtp_port)
+                    server.starttls()
+                    server.login(smtp_user, smtp_pass)
+                    server.sendmail(smtp_user, email, msg.as_string())
+                    server.quit()
+                except Exception as e:
+                    logger.error("Failed to send Email OTP", error=str(e))
+                    
             return {
                 "access_token": "",
                 "refresh_token": "",
@@ -198,15 +247,26 @@ class AuthService:
 
     async def login_mfa_verify(self, email: str, code: str) -> dict[str, Any]:
         """
-        Verifies TOTP token for login challenge and issues tokens.
+        Verifies Email OTP token for login challenge and issues tokens.
         """
         user = await self.repository.get_user_by_email(email)
-        if not user or not user.is_mfa_enabled or not user.mfa_secret:
+        if not user or not user.is_mfa_enabled:
             raise AuthenticationException("MFA is not enabled for this user.")
 
-        if not TOTPHelper.verify_totp(user.mfa_secret, code):
+        session_data = _email_otp_sessions.get(email)
+        if not session_data:
+            raise AuthenticationException("No active MFA request found or expired.")
+            
+        import time
+        if time.time() > session_data["expires_at"]:
+            del _email_otp_sessions[email]
+            raise AuthenticationException("OTP code has expired.")
+            
+        if session_data["code"] != code:
             logger.warning("MFA login challenge failed: incorrect code", email=email)
             raise AuthenticationException("Invalid verification code.")
+            
+        del _email_otp_sessions[email]
 
         roles = [r.name for r in user.roles]
         access_token = create_access_token(
@@ -229,7 +289,133 @@ class AuthService:
             "is_mfa_required": False
         }
 
-    async def rotate_tokens(self, refresh_token: str) -> dict[str, str]:
+    async def send_password_reset_link(self, email: str) -> dict[str, Any]:
+        """
+        Sends a password reset link to the user's email via SMTP.
+        """
+        import uuid
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        import os
+
+        # Verify user exists
+        user = await self.repository.get_user_by_email(email)
+        if not user:
+            # We still return success to prevent email enumeration attacks
+            return {"success": True}
+        
+        # Generate UUID token
+        reset_token = str(uuid.uuid4())
+        
+        # Store in memory dict with expiry (15 mins)
+        _password_reset_tokens[email] = {
+            "token": reset_token,
+            "expires_at": time.time() + 900
+        }
+
+        # Build reset link
+        base_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+        reset_link = f"{base_url}/reset-password?token={reset_token}&email={email}"
+
+        # Try to send email via SMTP if configured
+        smtp_host = os.environ.get("SMTP_HOST", "")
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        smtp_user = os.environ.get("SMTP_USER", "")
+        smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+
+        email_sent = False
+        if smtp_host and smtp_user:
+            try:
+                msg = MIMEMultipart("alternative")
+                msg['Subject'] = "MuleShield AI - Secure Password Reset"
+                msg['From'] = smtp_user
+                msg['To'] = email
+                
+                text = f"You have requested to reset your MuleShield AI password.\n\nPlease click the following link to reset your password:\n{reset_link}\n\nThis link will expire in 15 minutes."
+                html = f"""\
+                <html>
+                  <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
+                    <div style="max-w-md mx-auto bg-white p-8 border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                      <h2 style="color: #2563eb;">MuleShield AI</h2>
+                      <h3>Password Reset Request</h3>
+                      <p>Hello,</p>
+                      <p>We received a request to reset your password. Click the secure link below to proceed:</p>
+                      <p style="margin: 20px 0;">
+                        <a href="{reset_link}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
+                      </p>
+                      <p>If the button doesn't work, copy and paste this link into your browser:</p>
+                      <p style="color: #666; font-size: 12px;">{reset_link}</p>
+                      <p style="color: #999; font-size: 11px; margin-top: 30px;">This link will expire in 15 minutes. If you did not request this, please ignore this email.</p>
+                    </div>
+                  </body>
+                </html>
+                """
+                
+                part1 = MIMEText(text, "plain")
+                part2 = MIMEText(html, "html")
+                msg.attach(part1)
+                msg.attach(part2)
+                
+                server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(msg['From'], [email], msg.as_string())
+                server.quit()
+                logger.info("Password reset HTML link sent via SMTP", email=email)
+                email_sent = True
+            except Exception as err:
+                logger.error("Failed to send reset link via SMTP", error=str(err))
+        
+        if not email_sent:
+            logger.info("SMTP not configured or failed. Returning dev_link", email=email, token=reset_token)
+            return {"dev_link": reset_link, "dev_token": reset_token}
+            
+        return {"success": True}
+
+    async def reset_password_with_token(self, email: str, token: str, new_password: str) -> None:
+        """
+        Validates the reset token and updates the user's password.
+        """
+        user = await self.repository.get_user_by_email(email)
+        if not user:
+            raise AuthenticationException("Password reset failed. Invalid request.")
+            
+        session_data = _password_reset_tokens.get(email)
+        if not session_data:
+            raise AuthenticationException("No active reset request for this email. Please request a new link.")
+            
+        if time.time() > session_data["expires_at"]:
+            del _password_reset_tokens[email]
+            raise AuthenticationException("Reset link has expired. Please request a new one.")
+            
+        if session_data["token"] != token:
+            raise AuthenticationException("Invalid reset token.")
+            
+        # Check if new password is in the last 3 passwords
+        if PasswordHasher.verify_password(new_password, user.hashed_password):
+            raise ConflictException("You cannot use the same password that was used in the last 3 passwords. Please enter a new password.")
+            
+        history = []
+        if user.password_history:
+            history = user.password_history.split(",")
+            for old_hash in history:
+                if old_hash and PasswordHasher.verify_password(new_password, old_hash):
+                    raise ConflictException("You cannot use the same password that was used in the last 3 passwords. Please enter a new password.")
+                    
+        # Update history
+        history.insert(0, user.hashed_password)
+        history = history[:3]
+        user.password_history = ",".join(history)
+            
+        # Success, clear token and update password
+        del _password_reset_tokens[email]
+        
+        # Hash new password
+        user.hashed_password = PasswordHasher.hash_password(new_password)
+        # Note: commit happens in the route handler
+
+    async def rotate_tokens(self, refresh_token: str) -> dict[str, Any]:
         """
         Implements Refresh Token Rotation (RTR).
         Decodes the token, verifies it is not blacklisted, revokes it, and issues new tokens.
@@ -412,4 +598,103 @@ class AuthService:
             "access_token": access_token,
             "refresh_token": refresh_token,
             "is_mfa_required": False
+        }
+
+    async def send_phone_otp(self, phone_number: str, *, dev_mode: bool = True) -> dict[str, Any]:
+        """
+        Issues a one-time passcode for phone login.
+        Used as a local fallback when Firebase Phone Authentication is unavailable.
+        """
+        import os
+
+        normalized_phone = phone_number.strip()
+        session_id = secrets.token_urlsafe(24)
+        code = os.environ.get("PHONE_AUTH_DEV_OTP", "123456") if dev_mode else f"{secrets.randbelow(1_000_000):06d}"
+        expires_in = 300
+
+        _phone_otp_sessions[session_id] = {
+            "phone_number": normalized_phone,
+            "code": code,
+            "expires_at": time.time() + expires_in,
+        }
+
+        logger.info(
+            "Phone OTP issued (dev fallback)",
+            phone=normalized_phone,
+            session_id=session_id[:8],
+            dev_mode=dev_mode,
+        )
+
+        result: dict[str, Any] = {
+            "session_id": session_id,
+            "expires_in": expires_in,
+        }
+        if dev_mode:
+            result["dev_code"] = code
+        return result
+
+    async def verify_phone_otp(
+        self,
+        phone_number: str,
+        session_id: str,
+        code: str,
+    ) -> dict[str, Any]:
+        """
+        Validates a phone OTP session and issues application JWT tokens.
+        """
+        session = _phone_otp_sessions.get(session_id)
+        if not session:
+            raise AuthenticationException("OTP session expired or invalid. Request a new code.")
+
+        if time.time() > session["expires_at"]:
+            _phone_otp_sessions.pop(session_id, None)
+            raise AuthenticationException("OTP code expired. Request a new code.")
+
+        normalized_phone = phone_number.strip()
+        if session["phone_number"] != normalized_phone:
+            raise AuthenticationException("Phone number does not match the OTP session.")
+
+        if session["code"] != code.strip():
+            raise AuthenticationException("Invalid verification code.")
+
+        _phone_otp_sessions.pop(session_id, None)
+
+        email = f"phone_{normalized_phone.lstrip('+').replace(' ', '')}@muleshield.internal"
+        user = await self.repository.get_user_by_email(email)
+        if not user:
+            logger.info("Auto-registering phone auth user", email=email, phone=normalized_phone)
+            random_password = PasswordHasher.hash_password(secrets.token_urlsafe(16))
+            user = User(
+                email=email,
+                hashed_password=random_password,
+                first_name="Phone",
+                last_name=normalized_phone[-4:],
+                is_active=True,
+                is_mfa_enabled=False,
+            )
+            default_role = await self.repository.get_role_by_name("investigator")
+            if default_role:
+                user.roles.append(default_role)
+            await self.repository.create_user(user)
+            await self.repository.session.flush()
+
+        roles = [r.name for r in user.roles]
+        access_token = create_access_token(
+            subject=str(user.id),
+            roles=roles,
+            secret_key=self.jwt_secret,
+            expires_minutes=self.access_token_expire_minutes,
+            algorithm=self.jwt_algorithm,
+        )
+        refresh_token = create_refresh_token(
+            subject=str(user.id),
+            secret_key=self.jwt_secret,
+            expires_minutes=self.refresh_token_expire_minutes,
+            algorithm=self.jwt_algorithm,
+        )
+        logger.info("Phone OTP login successful", email=email, user_id=str(user.id))
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "is_mfa_required": False,
         }

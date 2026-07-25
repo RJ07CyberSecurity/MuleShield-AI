@@ -38,6 +38,8 @@ async def create_account(
     )
 
 
+from app.schemas.profile import AccountProfileResponse
+
 @router.get("", response_model=ResponseEnvelope[list[AccountResponse]])
 async def list_accounts(
     request: Request,
@@ -48,11 +50,30 @@ async def list_accounts(
     """
     Returns registered accounts, optionally filtered by customer UUID.
     """
-    accounts = await service.list_accounts(customer_id=customer_id)
+    owner_id = request.headers.get("x-user-id")
+    accounts = await service.list_accounts(customer_id=customer_id, owner_id=owner_id)
     return ResponseEnvelope(
         success=True,
         message="Bank accounts retrieved.",
         data=[AccountResponse.model_validate(a) for a in accounts],
+        request_id=request.state.request_id
+    )
+
+@router.get("/{id}/profile", response_model=ResponseEnvelope[AccountProfileResponse])
+async def get_account_profile(
+    request: Request,
+    id: uuid.UUID,
+    service: AccountService = Depends(get_account_service),
+    claims: dict = Depends(get_token_claims)
+) -> ResponseEnvelope[AccountProfileResponse]:
+    """
+    Retrieves detailed bank account profile including customer info and linked accounts.
+    """
+    profile_data = await service.get_account_profile(id)
+    return ResponseEnvelope(
+        success=True,
+        message="Account profile retrieved.",
+        data=AccountProfileResponse.model_validate(profile_data),
         request_id=request.state.request_id
     )
 

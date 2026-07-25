@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
                 await conn.run_sync(Base.metadata.create_all)
             logger.info("SQLite database tables verified and created")
             # Trigger seeding
-            await seed_account_data()
+            # await seed_account_data()
         else:
             logger.info("Connection pool successfully established")
     except Exception as exc:
@@ -109,37 +109,49 @@ async def seed_account_data() -> None:
             id=uuid.UUID("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"),
             customer_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),  # John Doe
             account_number="1000000001",
-            type="CHECKING",
+            account_type="CHECKING",
             balance=Decimal("12450.50"),
             currency="USD",
-            status="ACTIVE"
+            status="ACTIVE",
+            ifsc="HDFC0001234",
+            bank_name="HDFC Bank",
+            branch="New York Main Branch"
         )
         a2 = Account(
             id=uuid.UUID("bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb"),
             customer_id=uuid.UUID("22222222-2222-2222-2222-222222222222"),  # Sarah Jenkins
             account_number="1000000002",
-            type="CHECKING",
+            account_type="CHECKING",
             balance=Decimal("890000.00"),
             currency="USD",
-            status="ACTIVE"
+            status="ACTIVE",
+            ifsc="ICIC0005678",
+            bank_name="ICICI Bank",
+            branch="Chicago Downtown Branch"
         )
         a3 = Account(
             id=uuid.UUID("cccccccc-3333-3333-3333-cccccccccccc"),
             customer_id=uuid.UUID("33333333-3333-3333-3333-333333333333"),  # Michael Chang
             account_number="1000000003",
-            type="CHECKING",
+            account_type="CHECKING",
             balance=Decimal("4520.00"),
             currency="USD",
-            status="ACTIVE"
+            status="ACTIVE",
+            ifsc="SBIN0009012",
+            bank_name="State Bank of India",
+            branch="San Francisco Tech Branch"
         )
         a4 = Account(
             id=uuid.UUID("dddddddd-4444-4444-4444-dddddddddddd"),
             customer_id=uuid.UUID("44444444-4444-4444-4444-444444444444"),  # Amira Al-Farsi
             account_number="1000000004",
-            type="SAVINGS",
+            account_type="SAVINGS",
             balance=Decimal("150.00"),
             currency="USD",
-            status="ACTIVE"
+            status="ACTIVE",
+            ifsc="AXIS0003456",
+            bank_name="Axis Bank",
+            branch="Dubai International Branch"
         )
         session.add_all([a1, a2, a3, a4])
         await session.flush()

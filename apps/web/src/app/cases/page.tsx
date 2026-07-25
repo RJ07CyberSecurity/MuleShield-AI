@@ -381,8 +381,7 @@ export default function CasesPage() {
               return (
                 <tr
                   key={i}
-                  onClick={() => router.push(`/cases/${c.targetId}`)}
-                  className={`cursor-pointer text-xs hover:bg-surface-container-high/40 transition-colors ${
+                  className={`text-xs hover:bg-surface-container-high/40 transition-colors ${
                     isChecked ? "bg-primary-container/5" : ""
                   }`}
                 >
