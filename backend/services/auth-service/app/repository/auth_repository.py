@@ -85,7 +85,7 @@ class AuthRepository:
         result = await self.session.execute(
             select(User)
             .options(selectinload(User.roles).selectinload(Role.permissions))
-            .order_index(User.created_at.desc()) if hasattr(User, "created_at") else select(User)
+            .order_by(User.created_at.desc()) if hasattr(User, "created_at") else select(User)
         )
         # Fallback without ordering if created_at check fails
         if not hasattr(User, "created_at"):

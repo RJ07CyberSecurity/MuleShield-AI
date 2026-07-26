@@ -96,7 +96,7 @@ class AuthService:
         self.refresh_token_expire_minutes = refresh_token_expire_minutes
         self.mfa_issuer = mfa_issuer
 
-    async def register_user(self, email: str, password_raw: str, first_name: str, last_name: str) -> User:
+    async def register_user(self, email: str, password_raw: str, first_name: str, last_name: str, role: str = None) -> User:
         """
         Registers a new bank staff user with hashed password.
         """
@@ -115,14 +115,21 @@ class AuthService:
             is_mfa_enabled=False
         )
 
-        # Look up and assign default role 'analyst' if it exists
-        default_role = await self.repository.get_role_by_name("analyst")
-        if default_role:
-            new_user.roles.append(default_role)
+        # Look up and assign role
+        role_name = role.lower() if role else "analyst"
+        assigned_role = await self.repository.get_role_by_name(role_name)
+        if assigned_role:
+            new_user.roles.append(assigned_role)
 
         await self.repository.create_user(new_user)
         logger.info("New user registered successfully", email=email, user_id=str(new_user.id))
         return new_user
+
+    async def get_all_users(self) -> list[User]:
+        """
+        Retrieves all registered users.
+        """
+        return await self.repository.list_users()
 
     async def authenticate_credentials(self, email: str, password_raw: str) -> dict[str, Any]:
         """

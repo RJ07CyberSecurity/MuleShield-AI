@@ -375,10 +375,12 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-outline-variant/20 bg-surface-container-lowest">
-              <table className="w-full text-left border-collapse table-fixed min-w-[500px]">
-                <thead>
-                  <tr className="border-b border-outline-variant/30 text-on-surface-variant font-label-mono text-[9px] uppercase tracking-widest bg-surface-container-high/20">
+            <div className="rounded-xl border border-outline-variant/20 bg-surface-container-lowest">
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto scrollbar-thin">
+                <table className="w-full text-left border-collapse table-fixed min-w-[500px]">
+                  <thead>
+                    <tr className="border-b border-outline-variant/30 text-on-surface-variant font-label-mono text-[9px] uppercase tracking-widest bg-surface-container-high/20">
                     <th className="px-4 py-3 w-32">Entity ID</th>
                     <th className="px-4 py-3">Transaction Type</th>
                     <th className="px-4 py-3 w-36">Amount</th>
@@ -447,18 +449,130 @@ export default function DashboardPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right truncate">
-                          <span className="inline-flex items-center gap-1.5 text-xs text-on-surface">
+                          <div className="flex items-center justify-end gap-3">
+                            <span className="inline-flex items-center gap-1.5 text-xs text-on-surface">
+                              {tx.status === "Investigating" && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-risk-critical animate-pulse"></span>
+                              )}
+                              {tx.status}
+                            </span>
                             {tx.status === "Investigating" && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-risk-critical animate-pulse"></span>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  
+                                  const { useCaseStore } = require("../../store/useCaseStore");
+                                  await useCaseStore.getState().createCase({
+                                    title: `Investigation: ${tx.id}`,
+                                    description: `Suspicious transaction of type ${tx.type} detected with a risk score of ${tx.score}.`,
+                                    customerName: tx.id,
+                                    priority: tx.riskLevel === "critical" ? "CRITICAL" : tx.riskLevel === "high" ? "HIGH" : "MEDIUM",
+                                    riskScore: parseInt(tx.score.split("/")[0], 10) || 75
+                                  });
+                                  
+                                  window.location.href = "/cases";
+                                }}
+                                className="px-2 py-1 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-on-primary rounded text-[10px] font-bold transition-all"
+                              >
+                                Escalate Case
+                              </button>
                             )}
-                            {tx.status}
-                          </span>
+                          </div>
                         </td>
                       </tr>
                     ))
                   )}
                 </tbody>
               </table>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="md:hidden divide-y divide-outline-variant/10">
+                {statsLoading ? (
+                  [...Array(3)].map((_, i) => (
+                    <div key={`sk-m-${i}`} className="p-4 space-y-3 animate-pulse">
+                      <div className="flex justify-between items-center">
+                        <div className="h-4 bg-surface-container-high rounded w-32"></div>
+                        <div className="h-5 bg-surface-container-high rounded w-12"></div>
+                      </div>
+                      <div className="h-3 bg-surface-container-high rounded w-24"></div>
+                      <div className="flex justify-between items-center">
+                        <div className="h-4 bg-surface-container-high rounded w-20"></div>
+                        <div className="h-4 bg-surface-container-high rounded w-16"></div>
+                      </div>
+                    </div>
+                  ))
+                ) : transactions.length === 0 ? (
+                  <div className="p-6 text-center text-on-surface-variant text-xs">
+                    No transactions detected in this statement run.
+                  </div>
+                ) : (
+                  transactions.map((tx, idx) => (
+                    <div
+                      key={`m-${idx}`}
+                      onClick={() => setSelectedTransactionId(tx.id)}
+                      className={`p-4 text-body-sm transition-colors cursor-pointer space-y-3 ${
+                        selectedTransactionId === tx.id
+                          ? "bg-primary/10 border-l-2 border-primary"
+                          : "hover:bg-surface-container-high/30 border-l-2 border-transparent"
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="font-semibold text-on-surface font-label-mono truncate">
+                          {tx.id}
+                          <div className="text-[10px] text-on-surface-variant font-normal tracking-tight truncate mt-0.5">
+                            {tx.entity_name || "Unknown Entity"}
+                          </div>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
+                            tx.riskLevel === "critical"
+                              ? "text-risk-critical border-risk-critical/30 bg-risk-critical/10"
+                              : tx.riskLevel === "high"
+                              ? "text-risk-high border-risk-high/30 bg-risk-high/10"
+                              : "text-risk-medium border-risk-medium/30 bg-risk-medium/10"
+                          }`}
+                        >
+                          {tx.score}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center">
+                        <div className="text-on-surface-variant text-xs">{tx.type}</div>
+                        <div className="font-bold text-on-surface text-sm">{tx.amount}</div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-outline-variant/10">
+                        <span className="inline-flex items-center gap-1.5 text-xs text-on-surface">
+                          {tx.status === "Investigating" && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-risk-critical animate-pulse"></span>
+                          )}
+                          {tx.status}
+                        </span>
+                        {tx.status === "Investigating" && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const { useCaseStore } = require("../../store/useCaseStore");
+                              await useCaseStore.getState().createCase({
+                                title: `Investigation: ${tx.id}`,
+                                description: `Suspicious transaction of type ${tx.type} detected with a risk score of ${tx.score}.`,
+                                customerName: tx.id,
+                                priority: tx.riskLevel === "critical" ? "CRITICAL" : tx.riskLevel === "high" ? "HIGH" : "MEDIUM",
+                                riskScore: parseInt(tx.score.split("/")[0], 10) || 75
+                              });
+                              window.location.href = "/cases";
+                            }}
+                            className="px-2 py-1 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-on-primary rounded text-[10px] font-bold transition-all"
+                          >
+                            Escalate Case
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </section>

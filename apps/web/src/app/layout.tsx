@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import MainLayout from "../components/layout/MainLayout";
 import QueryProvider from "../components/providers/QueryProvider";
+import ThemeProvider from "../components/providers/ThemeProvider";
 
 export const metadata: Metadata = {
   title: "MuleShield AI | Investigative Suite",
@@ -12,9 +13,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
-        <QueryProvider>
-          <MainLayout>{children}</MainLayout>
-        </QueryProvider>
+        <ThemeProvider>
+          <QueryProvider>
+            <MainLayout>{children}</MainLayout>
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

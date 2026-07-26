@@ -305,6 +305,25 @@ export default function NodeInspector() {
           <span className="material-symbols-outlined text-sm font-semibold">troubleshoot</span>
           Deep Investigation
         </button>
+
+        <button
+          onClick={async () => {
+            const { useCaseStore } = require("../../store/useCaseStore");
+            await useCaseStore.getState().createCase({
+              title: `Investigation: ${selectedNode.id}`,
+              description: `Suspicious activity detected on node ${selectedNode.id} with risk score ${selectedNode.riskScore}.`,
+              customerName: selectedNode.id,
+              priority: selectedNode.riskScore >= 75 ? "CRITICAL" : selectedNode.riskScore >= 30 ? "HIGH" : "MEDIUM",
+              riskScore: selectedNode.riskScore
+            });
+            window.location.href = "/cases";
+          }}
+          disabled={isLoading}
+          className="w-full py-2.5 px-4 rounded-xl border border-risk-critical/40 bg-risk-critical/10 text-risk-critical font-bold text-xs hover:bg-risk-critical/20 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+        >
+          <span className="material-symbols-outlined text-sm font-semibold">assignment_late</span>
+          Escalate Case
+        </button>
       </div>
     </div>
   );

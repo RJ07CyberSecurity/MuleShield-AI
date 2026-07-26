@@ -675,6 +675,81 @@ async def live_events_websocket(websocket: WebSocket):
         logger.info("Live stream client disconnected")
 
 
+@app.websocket("/ws/cases")
+async def cases_websocket_proxy(websocket: WebSocket, token: str = None):
+    """
+    Gateway WebSocket proxy for the shared Investigation workspace.
+    """
+    print("HITTING CASES WS PROXY")
+    import websockets as ws_lib
+
+    # Build upstream URI (customer-service WebSocket endpoint)
+    upstream_port = 8002 if settings.USE_SQLITE else int(cust_url.split(":")[-1])
+    token_param = f"?token={token}" if token else ""
+    upstream_uri = f"ws://127.0.0.1:{upstream_port}/ws/cases{token_param}"
+
+    print(f"About to accept websocket. Upstream URI: {upstream_uri}")
+    await websocket.accept()
+    print("Websocket accepted!")
+    logger.info("Investigation WS proxy: client connected, forwarding to customer-service")
+
+    try:
+        async with ws_lib.connect(upstream_uri) as upstream:
+
+            async def client_to_upstream():
+                """Forward messages from browser client → customer-service."""
+                try:
+                    while True:
+                        data = await websocket.receive_text()
+                        await upstream.send(data)
+                except Exception:
+                    pass
+
+            async def upstream_to_client():
+                """Forward messages from customer-service → browser client."""
+                try:
+                    async for message in upstream:
+                        await websocket.send_text(message)
+                except Exception:
+                    pass
+
+            # Run both directions concurrently; stop when either side closes
+            done, pending = await asyncio.wait(
+                [
+                    asyncio.create_task(client_to_upstream()),
+                    asyncio.create_task(upstream_to_client()),
+                ],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+            
+            if hasattr(upstream, "close_code") and upstream.close_code:
+                logger.info(f"Investigation WS proxy: upstream closed with code {upstream.close_code}")
+                try:
+                    await websocket.close(code=upstream.close_code)
+                except Exception:
+                    pass
+                return
+
+    except ws_lib.exceptions.ConnectionClosed as exc:
+        logger.info(f"Investigation WS proxy: upstream closed with code {exc.code}")
+        try:
+            await websocket.close(code=exc.code)
+        except Exception:
+            pass
+        return
+    except Exception as exc:
+        logger.warning("Investigation WS proxy error", error=str(exc))
+    finally:
+        try:
+            # Fallback to 1000 if not already closed
+            await websocket.close(code=1000)
+        except Exception:
+            pass
+        logger.info("Investigation WS proxy: connection closed")
+
+
 
 @app.get("/metrics")
 async def prometheus_metrics():

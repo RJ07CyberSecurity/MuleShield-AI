@@ -33,6 +33,7 @@ class UserRegisterRequest(BaseModel):
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
+    role: str | None = Field(default=None, description="Optional role for admin creation")
 
 
 class UserLoginRequest(BaseModel):

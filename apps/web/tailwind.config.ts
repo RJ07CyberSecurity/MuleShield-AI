@@ -8,6 +8,14 @@ const config: Config = {
   ],
   darkMode: "class",
   theme: {
+    screens: {
+      'xs': '320px',
+      'sm': '481px',
+      'md': '768px',
+      'lg': '1024px',
+      'xl': '1367px',
+      '2xl': '1920px',
+    },
     extend: {
       colors: {
         "surface-container-lowest": "#0c0e16",

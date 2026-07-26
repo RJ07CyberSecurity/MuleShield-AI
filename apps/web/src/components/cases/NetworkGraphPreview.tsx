@@ -2,7 +2,7 @@
 
 import { Case } from "../../types/cases";
 import Link from "next/link";
-import { ExternalLink, Hub, ShieldAlert, Smartphone, UserCircle, Wallet } from "lucide-react";
+import { ExternalLink, Network, ShieldAlert, Smartphone, UserCircle, Wallet } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface NetworkGraphPreviewProps {
@@ -15,7 +15,7 @@ export default function NetworkGraphPreview({ caseData }: NetworkGraphPreviewPro
   const nodes = [
     { id: 1, label: caseData.customerName, icon: <UserCircle size={16} />, x: 50, y: 50, color: "bg-primary text-on-primary", delay: 0 },
     { id: 2, label: caseData.muleNodes?.[0], icon: <Wallet size={14} />, x: 20, y: 30, color: "bg-surface-container-highest text-on-surface", delay: 0.1 },
-    { id: 3, label: "Shared IP", icon: <Hub size={14} />, x: 80, y: 20, color: "bg-surface-container-highest text-on-surface", delay: 0.2 },
+    { id: 3, label: "Shared IP", icon: <Network size={14} />, x: 80, y: 20, color: "bg-surface-container-highest text-on-surface", delay: 0.2 },
     { id: 4, label: "Burner Phone", icon: <Smartphone size={14} />, x: 85, y: 70, color: "bg-risk-high/20 text-risk-high border border-risk-high/30", delay: 0.3 },
     { id: 5, label: "Mule Ring X", icon: <ShieldAlert size={14} />, x: 25, y: 80, color: "bg-risk-critical text-on-primary", delay: 0.4 },
   ];
@@ -57,7 +57,7 @@ export default function NetworkGraphPreview({ caseData }: NetworkGraphPreviewPro
           <p className="text-[10px] text-on-surface-variant mt-0.5">Explore 3rd-degree linkages in the 3D Graph module.</p>
         </div>
         <Link
-          href={`/graph?case=${caseData.id}`}
+          href={`/explorer?case=${caseData.id}`}
           className="px-3 py-1.5 bg-primary text-on-primary text-[10px] font-bold rounded-lg shadow-md hover:bg-primary-fixed transition-colors flex items-center gap-1.5"
         >
           Open Graph <ExternalLink size={12} />

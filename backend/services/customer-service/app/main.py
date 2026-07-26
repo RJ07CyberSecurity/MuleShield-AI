@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from app.api.v1.customer import router as customer_router
 from app.api.v1.case import router as case_router
+from app.api.v1.websocket import router as websocket_router
 from shared.config import BaseAppSettings
 from shared.database import db_manager
 from shared.exceptions import register_exception_handlers
@@ -64,10 +65,12 @@ app = FastAPI(
 app.add_middleware(RequestLoggingMiddleware)
 register_exception_handlers(app)
 
+from app.api.v1.websocket import router as websocket_router
+
 # Include routes
 app.include_router(customer_router, prefix="/api/v1")
 app.include_router(case_router, prefix="/api/v1")
-
+app.include_router(websocket_router)
 
 @app.get("/health", response_model=ResponseEnvelope[dict])
 async def health_check(request: Request) -> ResponseEnvelope[dict]:

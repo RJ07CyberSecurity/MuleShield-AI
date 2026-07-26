@@ -1,6 +1,6 @@
 "use client";
 
-import { Filter, Save, Download, Group } from "lucide-react";
+import { Filter, Save, Download, Group, Plus } from "lucide-react";
 import { useUIStore } from "../../store/useUIStore";
 
 interface FilterBarProps {

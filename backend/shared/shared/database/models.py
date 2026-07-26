@@ -242,12 +242,39 @@ class Case(Base):
     recommended_action: Mapped[str | None] = mapped_column(String(255), nullable=True)
     legal_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="OPEN", nullable=False)  # OPEN, INVESTIGATING, FROZEN, CLOSED
-
+    escalation_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    escalated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    escalated_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    
     # Relationships
     alert: Mapped["Alert | None"] = relationship(back_populates="cases")
+    activities: Mapped[list["Activity"]] = relationship(back_populates="case", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Case(status={self.status}, ref={self.legal_reference})>"
+
+class Activity(Base):
+    __tablename__ = "activities"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    case_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    action: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    case: Mapped["Case"] = relationship(back_populates="activities")
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[str | None] = mapped_column(String(255), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String(50), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
 
 class AuditLog(Base):

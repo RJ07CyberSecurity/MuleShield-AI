@@ -34,3 +34,7 @@ class CaseStatusUpdateRequest(BaseModel):
 class CaseNoteCreateRequest(BaseModel):
     text: str
 
+class CaseCreateRequest(BaseModel):
+    notes: str | None = None
+    recommended_action: str | None = None
+    status: str = "NEW"

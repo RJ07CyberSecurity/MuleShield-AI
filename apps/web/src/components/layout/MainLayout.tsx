@@ -13,7 +13,7 @@ import { useAuthStore } from "../../store/useAuthStore";
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { sidebarCollapsed } = useUIStore();
+  const { sidebarCollapsed, mobileMenuOpen, setMobileMenuOpen } = useUIStore();
   const { alerts, fetchAlerts } = useAlertStore();
   const { cases, fetchCases } = useCaseStore();
   const { user, isAuthenticated, isLoading, initialize, logout } = useAuthStore();
@@ -153,12 +153,19 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       {/* Main Content Area */}
       <div
         className={`transition-all duration-300 min-h-screen flex flex-col ${
-          sidebarCollapsed ? "md:pl-20" : "md:pl-64"
+          sidebarCollapsed ? "md:pl-20" : "pl-0 md:pl-64"
         }`}
       >
         {/* Top Header Bar */}
         <header className="h-16 border-b border-outline-variant/20 px-6 flex items-center justify-between bg-surface-container-low/80 backdrop-blur-md sticky top-0 z-30">
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-4 lg:gap-8">
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-2 text-on-surface-variant hover:text-on-surface focus:outline-none"
+              aria-label="Open menu"
+            >
+              <span className="material-symbols-outlined">menu</span>
+            </button>
             <nav className="hidden lg:flex gap-6">
               <Link
                 className={`font-label-mono text-xs uppercase tracking-wider transition-colors hover:text-on-surface ${
@@ -216,8 +223,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onFocus={() => setIsFocused(true)}
-                  placeholder="Search accounts, entities... (Ctrl+K)"
-                  className="bg-surface-container-high border border-outline-variant/30 rounded-xl pl-9 pr-12 py-1.5 text-body-sm focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 text-on-surface w-72 transition-all"
+                  placeholder="Search..."
+                  className="bg-surface-container-high border border-outline-variant/30 rounded-xl pl-9 pr-12 py-1.5 text-body-sm focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 text-on-surface w-40 sm:w-60 md:w-72 transition-all"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-label-mono bg-surface-container-lowest px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface-variant select-none">
                   ⌘K
@@ -228,7 +235,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
               {isFocused && (
                 <div
                   ref={dropdownRef}
-                  className="absolute right-0 mt-2 w-96 rounded-xl border border-outline-variant/30 bg-surface-container-low/95 backdrop-blur-md shadow-2xl p-4 space-y-4 z-50 text-left"
+                  className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 rounded-xl border border-outline-variant/30 bg-surface-container-low/95 backdrop-blur-md shadow-2xl p-4 space-y-4 z-50 text-left max-h-[80vh] overflow-y-auto"
                 >
                   {/* Recent Searches */}
                   {recentSearches.length > 0 && !searchQuery && (
@@ -379,7 +386,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         </header>
 
         {/* Dynamic Route Content - Premium Constraints */}
-        <main className="flex-1 p-6 md:p-8 max-w-[1600px] w-full mx-auto space-y-8">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-[1600px] w-full mx-auto space-y-4 sm:space-y-6 md:space-y-8 overflow-x-hidden">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6">
               <div className="relative flex items-center justify-center w-20 h-20">

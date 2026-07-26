@@ -7,12 +7,15 @@ import { useUIStore } from "../../store/useUIStore";
 
 export default function ProfilePage() {
   const { user, logout } = useAuthStore();
-  const { addToast } = useUIStore();
-  const [theme, setTheme] = useState("dark");
+  const { addToast, theme, setTheme } = useUIStore();
+  
   const [lang, setLang] = useState("English (US)");
   const [isUpdating, setIsUpdating] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
+  
+  // New state for photo upload
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
   const userInitials = user
     ? `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`
@@ -48,14 +51,41 @@ export default function ProfilePage() {
     }
   };
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setPhotoUrl(url);
+      addToast("Profile photo updated.", "success");
+    }
+  };
+
+  const handleExportCard = () => {
+    const cardContent = `MULESHIELD AI INVESTIGATOR CARD\n\nName: ${userName}\nEmail: ${userEmail}\nRole: ${userRole.replace(/_/g, " ").toUpperCase()}\nEmployee ID: MS-9942-F\nDepartment: Financial Intelligence\nStatus: ACTIVE`;
+    const blob = new Blob([cardContent], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Investigator_Card_${userName.replace(/\s+/g, "_")}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    addToast("Investigator card exported.", "success");
+  };
+
   return (
     <div className="space-y-6">
       {/* Profile Header Card */}
       <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center text-primary font-bold text-xl relative">
-            {userInitials}
-            <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-risk-low border-2 border-surface-container-low rounded-full"></span>
+          <div className="w-16 h-16 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center text-primary font-bold text-xl relative overflow-hidden">
+            {photoUrl ? (
+              <img src={photoUrl} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              userInitials
+            )}
+            <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-risk-low border-2 border-surface-container-low rounded-full z-10"></span>
           </div>
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -70,15 +100,18 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <button
-            onClick={() => alert("Upload dialog opened.")}
-            className="px-4 py-2 border border-outline-variant/30 hover:border-primary/50 text-xs font-semibold text-on-surface rounded-xl hover:bg-white/5 transition-all"
-          >
+        <div className="flex gap-3 items-center">
+          <label className="px-4 py-2 border border-outline-variant/30 hover:border-primary/50 text-xs font-semibold text-on-surface rounded-xl hover:bg-white/5 transition-all cursor-pointer">
             Edit Photo
-          </button>
+            <input 
+              type="file" 
+              accept="image/*" 
+              className="hidden" 
+              onChange={handlePhotoUpload} 
+            />
+          </label>
           <button
-            onClick={() => alert("Investigator card exported successfully.")}
+            onClick={handleExportCard}
             className="px-4 py-2 bg-primary text-on-primary font-bold text-xs rounded-xl hover:opacity-90 transition-all"
           >
             Export Investigator Card
@@ -251,7 +284,7 @@ export default function ProfilePage() {
                   {["light", "dark", "system"].map((t) => (
                     <button
                       key={t}
-                      onClick={() => setTheme(t)}
+                      onClick={() => setTheme(t as any)}
                       className={`flex-1 py-1.5 rounded-lg text-[9px] font-bold uppercase ${
                         theme === t ? "bg-primary text-on-primary" : "text-on-surface-variant hover:text-on-surface"
                       }`}

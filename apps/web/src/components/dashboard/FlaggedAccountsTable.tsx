@@ -167,7 +167,7 @@ export default function FlaggedAccountsTable({ ingestionId }: FlaggedAccountsTab
         </div>
 
         {/* Table Container */}
-        <div className="overflow-x-auto scrollbar-thin">
+        <div className="hidden md:block overflow-x-auto scrollbar-thin">
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-outline-variant/20 bg-surface-container-low text-[10px] font-label-mono text-on-surface-variant uppercase tracking-wider font-bold">
@@ -241,6 +241,55 @@ export default function FlaggedAccountsTable({ ingestionId }: FlaggedAccountsTab
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card View */}
+        <div className="md:hidden divide-y divide-outline-variant/10">
+          {filteredAccounts.map((acct) => (
+            <div
+              key={`m-${acct.account_id}`}
+              onClick={() => setSelectedAccountId(acct.account_id)}
+              className="p-4 hover:bg-surface-container-high/30 transition-colors text-xs text-on-surface cursor-pointer space-y-3"
+            >
+              <div className="flex justify-between items-start">
+                <div className="font-label-mono font-bold text-primary text-sm">
+                  {acct.account_number}
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="font-extrabold font-label-mono text-sm leading-none">
+                    {acct.risk_score} <span className="text-[8px] text-on-surface-variant font-normal">/100</span>
+                  </span>
+                  <span className={`mt-1 px-2 py-0.5 border text-[9px] font-bold font-label-mono rounded-full uppercase tracking-wider ${getSeverityBadge(acct.severity)}`}>
+                    {acct.severity}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-1 bg-surface-container-highest/30 p-2 rounded-lg border border-outline-variant/10">
+                {acct.factors.map((factor, i) => (
+                  <div key={i} className="flex gap-2 items-start">
+                    <span className="w-1 h-1 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                    <div className="text-[10px] text-on-surface-variant leading-tight">
+                      <span className="font-bold text-on-surface mr-1">
+                        [{factor.rule.replace("R1_", "").replace("R2_", "").replace("R3_", "").replace("R4_", "")}]
+                      </span>
+                      {factor.reason}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t border-outline-variant/10">
+                <span className="text-on-surface-variant text-xs">Balance</span>
+                <span className="font-bold font-label-mono text-primary text-sm">
+                  ${acct.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <span className="text-[9px] font-normal text-on-surface-variant ml-1 font-label-mono uppercase">
+                    {acct.currency}
+                  </span>
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
       

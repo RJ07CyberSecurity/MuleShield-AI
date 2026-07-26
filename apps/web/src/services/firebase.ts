@@ -37,7 +37,10 @@ export async function signInWithGoogle() {
     const result = await signInWithPopup(auth, provider);
     const idToken = await result.user.getIdToken();
     return { user: result.user, idToken };
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === "auth/popup-closed-by-user") {
+      throw new Error("Sign-in popup was closed before completion.");
+    }
     console.error("Google login failed", error);
     throw error;
   }
@@ -52,7 +55,10 @@ export async function signInWithGithub() {
     const result = await signInWithPopup(auth, provider);
     const idToken = await result.user.getIdToken();
     return { user: result.user, idToken };
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === "auth/popup-closed-by-user") {
+      throw new Error("Sign-in popup was closed before completion.");
+    }
     console.error("GitHub login failed", error);
     throw error;
   }

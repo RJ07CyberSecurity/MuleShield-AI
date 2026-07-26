@@ -2,7 +2,7 @@
 
 import { CaseTimelineEvent } from "../../types/cases";
 import { motion } from "framer-motion";
-import { Check, Clock, FileText, Folder, Hub, PersonStanding, ShieldAlert, Warning } from "lucide-react";
+import { Check, Clock, FileText, Folder, Network, PersonStanding, ShieldAlert, AlertTriangle } from "lucide-react";
 
 interface InvestigationTimelineProps {
   events: CaseTimelineEvent[];
@@ -13,11 +13,11 @@ export default function InvestigationTimeline({ events }: InvestigationTimelineP
   const getIcon = (iconName: string, isCompleted: boolean) => {
     const props = { size: 14, className: isCompleted ? "text-primary" : "text-on-surface-variant" };
     switch(iconName) {
-      case "warning": return <Warning {...props} />;
+      case "warning": return <AlertTriangle {...props} />;
       case "folder": return <Folder {...props} />;
       case "person": return <PersonStanding {...props} />;
       case "attach_file": return <FileText {...props} />;
-      case "hub": return <Hub {...props} />;
+      case "hub": return <Network {...props} />;
       case "check_circle": return <Check {...props} />;
       default: return <Clock {...props} />;
     }

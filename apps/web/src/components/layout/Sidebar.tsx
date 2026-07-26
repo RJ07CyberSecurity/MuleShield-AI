@@ -19,7 +19,7 @@ interface MenuSection {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { sidebarCollapsed: isCollapsed, toggleSidebar } = useUIStore();
+  const { sidebarCollapsed: isCollapsed, toggleSidebar, mobileMenuOpen, setMobileMenuOpen } = useUIStore();
   const { user } = useAuthStore();
   const [filterQuery, setFilterQuery] = useState("");
   const [recentPages, setRecentPages] = useState<MenuItem[]>([]);
@@ -98,30 +98,44 @@ export default function Sidebar() {
   }, [toggleSidebar]);
 
   return (
-    <aside
-      className={`fixed top-0 left-0 z-40 h-screen transition-all duration-350 border-r border-outline-variant/20 bg-surface-container-low/95 backdrop-blur-md flex flex-col justify-between select-none ${
-        isCollapsed ? "w-20" : "w-64"
-      }`}
-    >
-      <div className="overflow-y-auto flex-1 scrollbar-thin">
-        {/* Brand / Logo */}
-        <div className="h-16 flex items-center justify-between px-5 border-b border-outline-variant/20 sticky top-0 bg-surface-container-low z-10">
-          <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
-            <span className="material-symbols-outlined text-primary font-bold text-3xl">shield</span>
-            {!isCollapsed && (
-              <span className="font-headline-sm text-sm font-bold text-primary tracking-wider whitespace-nowrap animate-fade-in uppercase">
+    <>
+      {/* Mobile Backdrop overlay */}
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden backdrop-blur-sm transition-opacity"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`fixed top-0 left-0 z-40 h-screen transition-transform duration-300 md:transition-all border-r border-outline-variant/20 bg-surface-container-low/95 backdrop-blur-md flex flex-col justify-between select-none
+          ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+          ${isCollapsed ? "md:w-20 w-64" : "w-64"}
+        `}
+      >
+        <div className="overflow-y-auto flex-1 scrollbar-thin">
+          {/* Brand / Logo */}
+          <div className="h-16 flex items-center justify-between px-5 border-b border-outline-variant/20 sticky top-0 bg-surface-container-low z-10">
+            <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
+              <span className="material-symbols-outlined text-primary font-bold text-3xl">shield</span>
+              <span className={`font-headline-sm text-sm font-bold text-primary tracking-wider whitespace-nowrap animate-fade-in uppercase ${isCollapsed ? "md:hidden" : ""}`}>
                 MuleShield AI
               </span>
-            )}
-          </Link>
-          <button
-            onClick={toggleSidebar}
-            title="Toggle Sidebar (Ctrl+B)"
-            className="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors p-1 rounded hover:bg-surface-container-high hidden md:block"
-          >
-            {isCollapsed ? "first_page" : "last_page"}
-          </button>
-        </div>
+            </Link>
+            <button
+              onClick={toggleSidebar}
+              title="Toggle Sidebar (Ctrl+B)"
+              className="material-symbols-outlined text-on-surface-variant hover:text-primary transition-colors p-1 rounded hover:bg-surface-container-high hidden md:block"
+            >
+              {isCollapsed ? "first_page" : "last_page"}
+            </button>
+            <button
+              onClick={() => setMobileMenuOpen(false)}
+              className="md:hidden text-on-surface-variant p-1 -mr-2"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
 
         {/* Search bar inside sidebar */}
         {!isCollapsed && (
@@ -173,6 +187,7 @@ export default function Sidebar() {
                       <Link
                         key={item.name}
                         href={item.href}
+                        onClick={() => setMobileMenuOpen(false)}
                         className={`flex items-center gap-3.5 px-3 py-2 rounded-xl transition-all duration-150 group relative ${
                           isActive
                             ? "bg-primary-container/10 border border-primary/20 text-primary font-bold shadow-sm"
@@ -215,6 +230,7 @@ export default function Sidebar() {
                 <Link
                   key={page.name}
                   href={page.href}
+                  onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high/40 transition-colors"
                 >
                   <span className="material-symbols-outlined text-sm">{page.icon}</span>
@@ -244,6 +260,7 @@ export default function Sidebar() {
         )}
         <Link
           href="/profile"
+          onClick={() => setMobileMenuOpen(false)}
           className="flex items-center gap-3 px-3 py-1.5 rounded-xl hover:bg-surface-container-high/60 transition-colors cursor-pointer overflow-hidden border border-transparent hover:border-outline-variant/10"
         >
           <span className="material-symbols-outlined text-primary text-xl">account_circle</span>
@@ -256,5 +273,6 @@ export default function Sidebar() {
         </Link>
       </div>
     </aside>
+    </>
   );
 }

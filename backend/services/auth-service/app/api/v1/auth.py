@@ -39,7 +39,8 @@ async def register(
         email=payload.email,
         password_raw=payload.password,
         first_name=payload.first_name,
-        last_name=payload.last_name
+        last_name=payload.last_name,
+        role=payload.role
     )
     # Commit changes (flush occurred inside repo, commit makes it permanent in transactional database)
     await service.repository.session.commit()
@@ -246,6 +247,22 @@ async def logout(
         request_id=request.state.request_id
     )
 
+
+@router.get("/users", response_model=ResponseEnvelope[list[UserResponse]])
+async def get_all_users(
+    request: Request,
+    service: AuthService = Depends(get_auth_service)
+) -> ResponseEnvelope[list[UserResponse]]:
+    """
+    Returns all users for enterprise registry.
+    """
+    users = await service.get_all_users()
+    return ResponseEnvelope(
+        success=True,
+        message="Users retrieved successfully",
+        data=[UserResponse.model_validate(u) for u in users],
+        request_id=request.state.request_id
+    )
 
 @router.get("/me", response_model=ResponseEnvelope[UserResponse])
 async def get_me(

@@ -1,25 +1,55 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useUIStore } from "../../store/useUIStore";
 import { apiClient } from "../../services/api-client";
 
 export default function AdminPage() {
   const { addToast } = useUIStore();
 
-  const [activeTab, setActiveTab] = useState<"health" | "users" | "developer" | "audit" | "notifications">("health");
+  const [activeTab, setActiveTab] = useState<"health" | "users" | "escalated_cases" | "developer" | "audit" | "notifications">("health");
 
-  const [users, setUsers] = useState([
-    { name: "Johnathan Doe", email: "j.doe@muleshield.ai", role: "Admin", mfa: "Enabled", lastLogin: "2023-11-24 14:22:10", status: "Active" },
-    { name: "Sarah Al-Fayed", email: "sarah.a@muleshield.ai", role: "Investigator", mfa: "Enabled", lastLogin: "2023-11-24 09:15:33", status: "Active" },
-    { name: "Marcus Knight", email: "m.knight@muleshield.ai", role: "Compliance Officer", mfa: "Pending Setup", lastLogin: "Never", status: "Invited" },
-    { name: "Elena Volkov", email: "e.volkov@muleshield.ai", role: "Investigator", mfa: "Enabled", lastLogin: "2023-11-23 18:45:12", status: "Active" },
+  const [users, setUsers] = useState<any[]>([]);
+
+  // Fetch users on mount
+  React.useEffect(() => {
+    async function fetchUsers() {
+      try {
+        const response = await apiClient.get("/api/v1/auth/users");
+        if (response.success && response.data) {
+          const mappedUsers = response.data.map((u: any) => ({
+            name: `${u.first_name} ${u.last_name}`,
+            email: u.email,
+            role: u.roles && u.roles.length > 0 ? u.roles[0].name.toUpperCase() : "ANALYST",
+            mfa: u.is_mfa_enabled ? "Enabled" : "Pending Setup",
+            lastLogin: new Date(u.updated_at).toLocaleString(),
+            status: u.is_active ? "Active" : "Inactive"
+          }));
+          setUsers(mappedUsers);
+        }
+      } catch (error) {
+        console.error("Failed to fetch users", error);
+      }
+    }
+    fetchUsers();
+  }, []);
+  const [escalatedCases, setEscalatedCases] = useState([
+    { id: "CAS-2026-981", customer: "Elena Volkov", account: "9312-XXXX", priority: "CRITICAL", reason: "Multiple SAR Triggers", escalationDate: "2023-11-23 18:45:12", status: "Active" },
+    { id: "CAS-2026-942", customer: "Marcus Knight", account: "4591-XXXX", priority: "HIGH", reason: "Unusual Wire Transfers", escalationDate: "2023-11-24 09:15:33", status: "Active" },
+    { id: "CAS-2026-882", customer: "Johnathan Doe", account: "1002-XXXX", priority: "MEDIUM", reason: "Compliance Review", escalationDate: "2023-11-24 14:22:10", status: "Pending" },
   ]);
+
 
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("Investigator");
+
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [addUserName, setAddUserName] = useState("");
+  const [addUserEmail, setAddUserEmail] = useState("");
+  const [addUserPassword, setAddUserPassword] = useState("");
+  const [addUserRole, setAddUserRole] = useState("Investigator");
 
   const [editUserModal, setEditUserModal] = useState<any>(null);
   const [editRole, setEditRole] = useState("");
@@ -96,6 +126,44 @@ export default function AdminPage() {
     link.click();
     document.body.removeChild(link);
     addToast("User list exported to compliance bundle.", "success");
+  };
+
+  const handleAddUserSubmit = async () => {
+    if (!addUserName || !addUserEmail || !addUserPassword) {
+      addToast("Please fill all required fields", "error");
+      return;
+    }
+    const [firstName, ...lastNameParts] = addUserName.split(" ");
+    const lastName = lastNameParts.join(" ") || "User";
+    
+    try {
+      await apiClient.post("/api/v1/auth/register", {
+        email: addUserEmail,
+        password: addUserPassword,
+        first_name: firstName,
+        last_name: lastName,
+        role: addUserRole
+      });
+      
+      const newUser = {
+        name: addUserName,
+        email: addUserEmail,
+        role: addUserRole,
+        mfa: "Pending Setup",
+        lastLogin: "Never",
+        status: "Active"
+      };
+      
+      setUsers([...users, newUser]);
+      setShowAddUserModal(false);
+      setAddUserName("");
+      setAddUserEmail("");
+      setAddUserPassword("");
+      setAddUserRole("Investigator");
+      addToast(`User ${addUserName} created successfully.`, "success");
+    } catch (error) {
+      addToast("Failed to create user. Ensure email is unique.", "error");
+    }
   };
 
   const handleInviteSubmit = () => {
@@ -203,7 +271,7 @@ MuleShield AI Intelligence Suite
       {/* Top main tabs */}
       <div className="flex justify-between items-center border-b border-outline-variant/30 pb-4">
         <div className="flex flex-wrap gap-4 lg:gap-6">
-          {["health", "users", "developer", "audit", "notifications"].map((tab) => (
+          {["health", "users", "escalated_cases", "developer", "audit", "notifications"].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
@@ -215,6 +283,8 @@ MuleShield AI Intelligence Suite
                 ? "System Health"
                 : tab === "users"
                 ? "User Management"
+                : tab === "escalated_cases"
+                ? "Escalated Cases"
                 : tab === "developer"
                 ? "Developer Portal"
                 : tab === "audit"
@@ -338,6 +408,12 @@ MuleShield AI Intelligence Suite
                 Export User List
               </button>
               <button
+                onClick={() => setShowAddUserModal(true)}
+                className="px-4 py-2 bg-secondary-container text-on-surface font-bold text-xs rounded-xl hover:opacity-90 transition-opacity"
+              >
+                Add User
+              </button>
+              <button
                 onClick={() => setShowInviteModal(true)}
                 className="px-4 py-2 bg-primary text-on-primary font-bold text-xs rounded-xl hover:opacity-90 transition-opacity"
               >
@@ -444,6 +520,112 @@ MuleShield AI Intelligence Suite
                   <div className="text-on-surface-variant text-[9px]">System Load</div>
                   <div className="font-black text-2xl text-on-surface mt-1">12.4 ms <span className="text-xs text-risk-low">Stable</span></div>
                   <p className="text-[9px] text-on-surface-variant mt-1">Avg Access Latency</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "escalated_cases" && (
+        <div className="space-y-6 text-left">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+            <div>
+              <h2 className="text-xl font-bold text-on-surface">Escalated Case Registry</h2>
+              <p className="text-body-sm text-on-surface-variant mt-1">Review, assign, and solve high-priority escalated investigations.</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => addToast("Escalated case registry exported.", "success")}
+                className="px-4 py-2 border border-outline-variant/30 hover:border-primary/45 rounded-xl text-xs font-semibold text-on-surface hover:bg-white/5 transition-all"
+              >
+                Export Registry
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 overflow-x-auto rounded-xl border border-outline-variant/30 bg-surface-container-low max-h-[500px] overflow-y-auto">
+              <table className="w-full text-left border-collapse table-fixed min-w-[700px]">
+                <thead className="sticky top-0 bg-surface-container-low/95 backdrop-blur-md z-10 border-b border-outline-variant/30">
+                  <tr className="text-on-surface-variant font-label-mono text-[9px] uppercase tracking-widest">
+                    <th className="px-4 py-4 w-72">Case / Customer</th>
+                    <th className="px-4 py-4 w-32">Priority</th>
+                    <th className="px-4 py-4 w-44">Escalation Reason</th>
+                    <th className="px-4 py-4 w-36">Escalated On</th>
+                    <th className="px-4 py-4 text-right w-28">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant/10">
+                  {escalatedCases.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-10 text-center text-on-surface-variant text-sm">
+                        No active escalations.
+                      </td>
+                    </tr>
+                  ) : escalatedCases.map((c, i) => (
+                    <tr key={i} className="text-xs hover:bg-surface-container-high/20 transition-colors">
+                      <td className="px-4 py-4 flex items-center gap-3">
+                        <span className="w-8 h-8 rounded-full bg-secondary-container text-primary font-bold flex items-center justify-center border border-outline-variant/30 flex-shrink-0">
+                          {c.customer.split(" ").map(n=>n[0]).join("")}
+                        </span>
+                        <div className="truncate">
+                          <div className="font-bold text-on-surface truncate">{c.id}</div>
+                          <div className="text-[10px] text-on-surface-variant font-label-mono truncate mt-0.5">{c.customer} • {c.account}</div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`px-2 py-0.5 border rounded font-label-mono text-[9px] uppercase font-bold ${
+                          c.priority === 'CRITICAL' ? 'bg-risk-critical/10 border-risk-critical/20 text-risk-critical' :
+                          c.priority === 'HIGH' ? 'bg-risk-high/10 border-risk-high/20 text-risk-high' :
+                          'bg-risk-medium/10 border-risk-medium/20 text-risk-medium'
+                        }`}>
+                          {c.priority}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 truncate text-on-surface">{c.reason}</td>
+                      <td className="px-4 py-4 font-label-mono text-on-surface-variant truncate">{c.escalationDate}</td>
+                      <td className="px-4 py-4 text-right">
+                        <div className="flex justify-end gap-2 text-on-surface-variant">
+                          <button
+                            onClick={() => addToast(`Viewing history for case ${c.id}`, "info")}
+                            className="material-symbols-outlined text-base hover:text-primary transition-colors"
+                            title="View Case History"
+                          >
+                            history
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEscalatedCases(escalatedCases.filter(x => x.id !== c.id));
+                              addToast(`Case ${c.id} successfully solved.`, "success");
+                            }}
+                            className="material-symbols-outlined text-base hover:text-risk-low transition-colors"
+                            title="Solve Case"
+                          >
+                            task_alt
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Escalation Telemetry sidebar */}
+            <div className="lg:col-span-1 p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low space-y-6">
+              <h3 className="font-headline-sm text-xs font-bold text-on-surface uppercase tracking-wider">Escalation Telemetry</h3>
+              <div className="space-y-4 text-xs font-label-mono">
+                <div className="p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10">
+                  <div className="text-on-surface-variant text-[9px]">Active Escalations</div>
+                  <div className="font-black text-2xl text-risk-high mt-1">{escalatedCases.length} <span className="text-xs text-risk-high">↑1</span></div>
+                  <p className="text-[9px] text-on-surface-variant mt-1">Requiring immediate attention</p>
+                </div>
+                <div className="p-4 bg-surface-container-lowest rounded-xl border border-outline-variant/10">
+                  <div className="text-on-surface-variant text-[9px]">Avg Resolution Time</div>
+                  <div className="font-black text-2xl text-on-surface mt-1">4.2 hrs <span className="text-xs text-risk-low">Optimal</span></div>
+                  <p className="text-[9px] text-on-surface-variant mt-1">SLA Compliance 98%</p>
                 </div>
               </div>
             </div>
@@ -909,6 +1091,83 @@ MuleShield AI Intelligence Suite
                   Send Direct Email
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add User Modal */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-surface-container-low border border-outline-variant/30 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-outline-variant/10">
+              <h3 className="text-lg font-bold text-on-surface">Add New System User</h3>
+              <p className="text-xs text-on-surface-variant mt-1">Directly provision a new account with DB integration.</p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Full Name</label>
+                <input 
+                  type="text"
+                  value={addUserName}
+                  onChange={e => setAddUserName(e.target.value)}
+                  className="w-full bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary"
+                  placeholder="e.g. John Doe"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Email Address</label>
+                <input 
+                  type="email"
+                  value={addUserEmail}
+                  onChange={e => setAddUserEmail(e.target.value)}
+                  className="w-full bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary"
+                  placeholder="name@muleshield.ai"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Password</label>
+                <input 
+                  type="password"
+                  value={addUserPassword}
+                  onChange={e => setAddUserPassword(e.target.value)}
+                  className="w-full bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary"
+                  placeholder="Minimum 8 characters"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-wider mb-2">Assign Role</label>
+                <select
+                  value={addUserRole}
+                  onChange={e => setAddUserRole(e.target.value)}
+                  className="w-full bg-surface-container border border-outline-variant/30 rounded-lg px-4 py-2 text-sm text-on-surface focus:outline-none focus:border-primary"
+                >
+                  <option value="Investigator">Investigator</option>
+                  <option value="Auditor">Auditor</option>
+                  <option value="Reporter">Reporter</option>
+                  <option value="Complaint Officer">Complaint Officer</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-outline-variant/10 flex justify-end gap-3 bg-surface-container-lowest">
+              <button 
+                onClick={() => setShowAddUserModal(false)}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-on-surface-variant hover:text-on-surface hover:bg-white/5"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleAddUserSubmit}
+                className="px-4 py-2 bg-primary text-on-primary rounded-lg text-sm font-bold hover:opacity-90 transition-opacity"
+              >
+                Create User
+              </button>
             </div>
           </div>
         </div>

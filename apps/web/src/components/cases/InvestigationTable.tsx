@@ -86,7 +86,8 @@ export default function InvestigationTable({
           <span className="material-symbols-outlined animate-spin text-primary text-3xl">autorenew</span>
         </div>
       )}
-      <table className="w-full text-left border-collapse min-w-[1100px] table-fixed">
+      <div className="hidden md:block">
+        <table className="w-full text-left border-collapse min-w-[1100px] table-fixed">
         <thead className="sticky top-0 bg-surface-container-low/95 backdrop-blur-md z-10 border-b border-outline-variant/30 select-none">
           <tr className="text-on-surface-variant font-label-mono text-[9px] uppercase tracking-widest">
             <th className="px-4 py-4 w-12 text-center">
@@ -219,7 +220,105 @@ export default function InvestigationTable({
             );
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
+      
+      {/* Mobile Card View */}
+      <div className="md:hidden divide-y divide-outline-variant/10">
+        {sortedCases.length === 0 && !isLoading && (
+          <div className="px-4 py-16 text-center text-on-surface-variant text-sm">
+            No active investigations matching the current filters.
+          </div>
+        )}
+        {sortedCases.map((c) => {
+          const isChecked = selectedRows.has(c.id);
+          const isActive = activeCaseId === c.id;
+
+          return (
+            <div
+              key={`m-${c.id}`}
+              onClick={() => onRowClick(c.id)}
+              className={`p-4 space-y-4 cursor-pointer transition-colors border-l-2 ${
+                isActive
+                  ? "bg-surface-container-high border-l-primary"
+                  : isChecked
+                  ? "bg-primary-container/5 border-l-transparent"
+                  : "hover:bg-surface-container-high/40 border-l-transparent"
+              }`}
+            >
+              {/* Header: Checkbox + ID + Priority */}
+              <div className="flex justify-between items-start">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {}}
+                    onClick={(e) => { e.stopPropagation(); onSelectRow(c.id, e); }}
+                    className="rounded border-outline-variant/30 text-primary focus:ring-primary/20 bg-surface-container-lowest cursor-pointer"
+                  />
+                  <span className="font-bold text-primary font-label-mono text-sm">{c.id}</span>
+                </div>
+                <span className={`px-2.5 py-0.5 rounded border text-[9px] font-bold ${getPriorityColor(c.priority)}`}>
+                  {c.priority}
+                </span>
+              </div>
+
+              {/* Customer Info */}
+              <div>
+                <div className="font-semibold text-on-surface truncate">{c.customerName}</div>
+                <div className="text-[10px] text-on-surface-variant font-label-mono mt-0.5">
+                  {c.muleNodes?.[0]} • {c.bank}
+                </div>
+              </div>
+
+              {/* Status & SLA */}
+              <div className="flex justify-between items-center bg-surface-container-highest/30 p-2 rounded-lg border border-outline-variant/10">
+                <div className="flex flex-col">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-on-surface">
+                    <span className={`w-1.5 h-1.5 rounded-full ${c.status === "CLOSED" ? "bg-on-surface-variant/40" : c.status === "INVESTIGATING" ? "bg-risk-high animate-pulse" : "bg-primary"}`}></span>
+                    {c.currentStage}
+                  </span>
+                  <span className="text-[9px] text-on-surface-variant font-normal mt-0.5 ml-3">{c.evidenceCount} Evidences</span>
+                </div>
+                <div className={`font-label-mono font-semibold text-xs ${c.slaRemaining?.startsWith("-") ? "text-risk-critical" : "text-on-surface-variant"}`}>
+                  {c.slaRemaining}
+                </div>
+              </div>
+
+              {/* Assignment & Risk Score */}
+              <div className="flex justify-between items-end">
+                <div>
+                  {c.assignedTo === "Unassigned" ? (
+                    <span className="italic text-[10px] text-on-surface-variant/50">Unassigned</span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+                      <span className="w-4 h-4 rounded-full bg-secondary-container text-primary text-[7px] font-bold flex items-center justify-center border border-outline-variant/30">
+                        {c.assignedTo.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase()}
+                      </span>
+                      {c.assignedTo}
+                    </span>
+                  )}
+                </div>
+                <div className="w-24 text-right">
+                  <div className="flex justify-between items-baseline text-[9px] font-label-mono text-on-surface-variant mb-1">
+                    <span>Score</span>
+                    <span className="font-bold text-on-surface">{c.riskScore}</span>
+                  </div>
+                  <div className="h-1 bg-surface-container-high rounded-full overflow-hidden w-full mb-1">
+                    <div
+                      className={`h-full rounded-full ${c.riskScore >= 90 ? "bg-risk-critical" : c.riskScore >= 70 ? "bg-risk-high" : "bg-risk-medium"}`}
+                      style={{ width: `${c.riskScore}%` }}
+                    />
+                  </div>
+                  <div className="text-[8px] text-primary font-label-mono">
+                    {c.aiConfidence}% AI CONF
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

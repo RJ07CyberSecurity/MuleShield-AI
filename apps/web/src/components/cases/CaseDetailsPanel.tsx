@@ -2,7 +2,7 @@
 
 import { Case } from "../../types/cases";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ChevronRight, CheckCircle2, AlertOctagon, FileText, UserCircle, Activity, Info, Link as LinkIcon, Hub, Clock } from "lucide-react";
+import { X, ChevronRight, CheckCircle2, AlertOctagon, FileText, UserCircle, Activity, Info, Link as LinkIcon, Network, Clock } from "lucide-react";
 import { useState } from "react";
 import AIExplainability from "./AIExplainability";
 import InvestigationTimeline from "./InvestigationTimeline";
@@ -14,11 +14,13 @@ interface CaseDetailsPanelProps {
   caseData: Case | null;
   onClose: () => void;
   onUpdateStatus: (id: string, status: Case["status"]) => void;
+  /** Display names of OTHER investigators currently viewing this case. */
+  viewers?: string[];
 }
 
 type TabType = "SUMMARY" | "EXPLAINABILITY" | "TIMELINE" | "EVIDENCE" | "NETWORK";
 
-export default function CaseDetailsPanel({ caseData, onClose, onUpdateStatus }: CaseDetailsPanelProps) {
+export default function CaseDetailsPanel({ caseData, onClose, onUpdateStatus, viewers = [] }: CaseDetailsPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>("SUMMARY");
 
   if (!caseData) return null;
@@ -26,15 +28,15 @@ export default function CaseDetailsPanel({ caseData, onClose, onUpdateStatus }: 
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: 20 }}
-        className="w-[500px] flex-shrink-0 bg-surface-container-low border-l border-outline-variant/30 flex flex-col h-full overflow-hidden shadow-2xl z-20"
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.98 }}
+        className="w-full flex-1 bg-surface border border-outline-variant/30 rounded-xl flex flex-col h-full overflow-hidden shadow-2xl z-20"
       >
         {/* Header */}
         <div className="p-4 border-b border-outline-variant/30 bg-surface-container-low/95 backdrop-blur flex justify-between items-start sticky top-0 z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-[10px] font-label-mono text-primary border border-primary/30 bg-primary/10 px-1.5 py-0.5 rounded font-bold">
                 {caseData.id}
               </span>
@@ -43,13 +45,32 @@ export default function CaseDetailsPanel({ caseData, onClose, onUpdateStatus }: 
               }`}>
                 {caseData.priority} PRIORITY
               </span>
+              {/* Presence indicator — other investigators viewing this case */}
+              {viewers.length > 0 && (
+                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-outline-variant/30 bg-surface-container-high text-[9px] font-bold text-on-surface-variant">
+                  <span className="w-1.5 h-1.5 rounded-full bg-risk-low animate-pulse" />
+                  {viewers.slice(0, 3).map((name, i) => (
+                    <span
+                      key={i}
+                      title={name}
+                      className="w-4 h-4 rounded-full bg-secondary-container text-primary text-[7px] font-bold flex items-center justify-center border border-outline-variant/20"
+                    >
+                      {name.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase()}
+                    </span>
+                  ))}
+                  {viewers.length > 3 && (
+                    <span className="text-[8px] text-on-surface-variant">+{viewers.length - 3}</span>
+                  )}
+                  <span>{viewers.length} also viewing</span>
+                </span>
+              )}
             </div>
             <h2 className="text-lg font-bold text-on-surface leading-tight">{caseData.title}</h2>
             <p className="text-xs text-on-surface-variant font-medium mt-1 truncate">
               {caseData.customerName} • {caseData.muleNodes?.[0]}
             </p>
           </div>
-          <button onClick={onClose} className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest rounded-full transition-colors">
+          <button onClick={onClose} className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest rounded-full transition-colors ml-2 flex-shrink-0">
             <X size={18} />
           </button>
         </div>
@@ -63,7 +84,7 @@ export default function CaseDetailsPanel({ caseData, onClose, onUpdateStatus }: 
             { id: "SUMMARY", label: "Summary", icon: <Info size={14} /> },
             { id: "EXPLAINABILITY", label: "AI Explain", icon: <Activity size={14} /> },
             { id: "TIMELINE", label: "Timeline", icon: <Clock size={14} /> },
-            { id: "NETWORK", label: "Network", icon: <Hub size={14} /> },
+            { id: "NETWORK", label: "Network", icon: <Network size={14} /> },
             { id: "EVIDENCE", label: `Evidence (${caseData.evidenceCount})`, icon: <FileText size={14} /> },
           ].map((tab) => (
             <button
