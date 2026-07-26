@@ -1,21 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuthStore } from "../../store/useAuthStore";
 import { apiClient } from "../../services/api-client";
 import { useUIStore } from "../../store/useUIStore";
+import IDCardModal from "../../components/profile/IDCardModal";
+import { QRCodeSVG } from "qrcode.react";
 
 export default function ProfilePage() {
-  const { user, logout } = useAuthStore();
-  const { addToast, theme, setTheme } = useUIStore();
+  const { user, updateProfile, setupMfa, verifyMfa, disableMfa } = useAuthStore();
+  const { addToast } = useUIStore();
+  const { theme, setTheme } = useUIStore();
   
   const [lang, setLang] = useState("English (US)");
   const [isUpdating, setIsUpdating] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   
+  const [themeTemp, setThemeTemp] = useState<string>("dark");
+  const [isIDCardModalOpen, setIsIDCardModalOpen] = useState(false);
+  const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
+  const [mfaSetupData, setMfaSetupData] = useState<{ secret: string; qr_code_uri: string } | null>(null);
+  const [mfaVerifyCode, setMfaVerifyCode] = useState("");
+  const [mfaLoading, setMfaLoading] = useState(false);
+  
   // New state for photo upload
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  
+  // State for ID Card Generator modal
 
   const userInitials = user
     ? `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`
@@ -51,37 +63,37 @@ export default function ProfilePage() {
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setPhotoUrl(url);
-      addToast("Profile photo updated.", "success");
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        try {
+          const base64String = reader.result as string;
+          await updateProfile({ avatar_url: base64String });
+          setPhotoUrl(base64String);
+          addToast("Profile photo updated successfully.", "success");
+        } catch (error: any) {
+          addToast(error.message || "Failed to update profile photo", "error");
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
   const handleExportCard = () => {
-    const cardContent = `MULESHIELD AI INVESTIGATOR CARD\n\nName: ${userName}\nEmail: ${userEmail}\nRole: ${userRole.replace(/_/g, " ").toUpperCase()}\nEmployee ID: MS-9942-F\nDepartment: Financial Intelligence\nStatus: ACTIVE`;
-    const blob = new Blob([cardContent], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `Investigator_Card_${userName.replace(/\s+/g, "_")}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    addToast("Investigator card exported.", "success");
+    setIsIDCardModalOpen(true);
   };
 
   return (
     <div className="space-y-6">
+      
       {/* Profile Header Card */}
       <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center text-primary font-bold text-xl relative overflow-hidden">
-            {photoUrl ? (
-              <img src={photoUrl} alt="Profile" className="w-full h-full object-cover" />
+            {(photoUrl || user?.avatar_url) ? (
+              <img src={photoUrl || user?.avatar_url} alt="Profile" className="w-full h-full object-cover" />
             ) : (
               userInitials
             )}
@@ -164,6 +176,14 @@ export default function ProfilePage() {
                 <label className="text-on-surface-variant font-medium">Department</label>
                 <select className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-3.5 py-2 text-on-surface focus:outline-none">
                   <option>Financial Intelligence</option>
+                  <option>Investigator</option>
+                  <option>Manager</option>
+                  <option>Security Analyst L1</option>
+                  <option>Security Analyst L2</option>
+                  <option>Reporter</option>
+                  <option>Cyber Crime Officer</option>
+                  <option>DCP</option>
+                  <option>IPS Officer</option>
                 </select>
               </div>
             </div>
@@ -242,25 +262,49 @@ export default function ProfilePage() {
 
               <div className="space-y-4 text-xs flex-1">
                 <div className="space-y-1">
-                  <div className="font-bold text-on-surface">Multi-Factor Auth is <span className="text-risk-low font-bold">Active</span></div>
-                  <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                    MFA is enforced downstream across all financial intelligence networks. Rotate recovery codes below to secure credentials.
-                  </p>
+                  {user?.is_mfa_enabled ? (
+                    <>
+                      <div className="font-bold text-on-surface">Multi-Factor Auth is <span className="text-risk-low font-bold">Active</span></div>
+                      <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                        MFA is enforced downstream across all financial intelligence networks. Rotate recovery codes below to secure credentials.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-bold text-on-surface">Multi-Factor Auth is <span className="text-risk-medium font-bold">Inactive</span></div>
+                      <p className="text-[10px] text-on-surface-variant leading-relaxed">
+                        Protect your account by enabling Multi-Factor Authentication.
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div className="flex gap-3">
-                  <button
-                    onClick={handleRotate}
-                    className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 text-xs font-semibold text-on-surface rounded-xl transition-all"
-                  >
-                    Rotate Recovery Codes
-                  </button>
-                  <button
-                    onClick={() => alert("MFA deactivation request sent to security supervisor.")}
-                    className="px-4 py-2 border border-risk-high/30 hover:border-risk-high/65 text-xs font-semibold text-risk-high rounded-xl hover:bg-risk-high/5 transition-all"
-                  >
-                    Deactivate MFA
-                  </button>
+                  {user?.is_mfa_enabled ? (
+                    <>
+                      <button
+                        onClick={() => addToast("Recovery codes rotation feature coming soon", "info")}
+                        className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 text-xs font-semibold text-on-surface rounded-xl transition-all"
+                      >
+                        Rotate Recovery Codes
+                      </button>
+                      <button
+                        onClick={handleDisableMfa}
+                        disabled={mfaLoading}
+                        className="px-4 py-2 border border-risk-high/30 hover:border-risk-high/65 text-xs font-semibold text-risk-high rounded-xl hover:bg-risk-high/5 transition-all disabled:opacity-50"
+                      >
+                        {mfaLoading ? "Deactivating..." : "Deactivate MFA"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={handleEnableMfa}
+                      disabled={mfaLoading}
+                      className="px-4 py-2 bg-primary hover:bg-primary/90 text-on-primary text-xs font-semibold rounded-xl transition-all disabled:opacity-50"
+                    >
+                      {mfaLoading ? "Loading..." : "Enable MFA"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -305,7 +349,7 @@ export default function ProfilePage() {
                 >
                   <option>English (US)</option>
                   <option>English (UK)</option>
-                  <option>Español</option>
+                  <option>EspaÃ±ol</option>
                 </select>
               </div>
 
@@ -355,7 +399,7 @@ export default function ProfilePage() {
                 <div className="absolute left-[-5px] top-1 w-2.5 h-2.5 rounded-full bg-primary" />
                 <div className="font-bold text-on-surface">Exported SAR Report</div>
                 <p className="text-[10px] text-on-surface-variant leading-relaxed">
-                  Format: PDF • Secure Link
+                  Format: PDF â€¢ Secure Link
                 </p>
                 <div className="text-[9px] font-label-mono text-on-surface-variant/70 mt-1">
                   Yesterday, 4:20 PM
@@ -365,6 +409,58 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* ID Card Modal */}
+      <IDCardModal 
+        isOpen={isIDCardModalOpen} 
+        onClose={() => setIsIDCardModalOpen(false)} 
+        defaultName={userName}
+        defaultEmail={userEmail}
+        defaultRole={userRole.replace(/_/g, " ").toUpperCase()}
+        defaultPhoto={photoUrl || user?.avatar_url}
+      />
+
+      {/* MFA Setup Modal */}
+      {isMfaModalOpen && mfaSetupData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface border border-outline-variant/30 rounded-2xl w-full max-w-md p-6 relative shadow-2xl flex flex-col items-center">
+            <button
+              onClick={() => setIsMfaModalOpen(false)}
+              className="absolute top-4 right-4 text-on-surface-variant hover:text-on-surface"
+            >
+              <span className="material-symbols-outlined">close</span>
+            </button>
+            <h2 className="text-lg font-bold text-on-surface mb-2">Enable Multi-Factor Authentication</h2>
+            <p className="text-xs text-on-surface-variant text-center mb-6">
+              Scan this QR code with your authenticator app (like Google Authenticator or Authy) to link your account.
+            </p>
+            <div className="bg-white p-4 rounded-xl mb-6">
+              <QRCodeSVG value={mfaSetupData.qr_code_uri} size={180} />
+            </div>
+            <div className="w-full space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Verification Code</label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={mfaVerifyCode}
+                  onChange={(e) => setMfaVerifyCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Enter 6-digit code"
+                  className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-4 py-3 text-center text-lg tracking-[0.5em] text-on-surface font-bold focus:outline-none focus:border-primary/50"
+                />
+              </div>
+              <button
+                onClick={handleVerifyMfa}
+                disabled={mfaVerifyCode.length !== 6 || mfaLoading}
+                className="w-full py-3 bg-primary hover:bg-primary/90 text-on-primary font-bold rounded-xl transition-all disabled:opacity-50"
+              >
+                {mfaLoading ? "Verifying..." : "Verify & Enable"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

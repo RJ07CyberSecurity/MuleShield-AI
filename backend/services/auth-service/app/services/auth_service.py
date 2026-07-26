@@ -131,6 +131,20 @@ class AuthService:
         """
         return await self.repository.list_users()
 
+    async def update_user_profile(self, user_id: uuid.UUID, update_data: dict[str, Any]) -> User:
+        """
+        Updates user profile attributes (e.g. avatar_url, names).
+        """
+        user = await self.repository.get_user_by_id(user_id)
+        if not user:
+            raise NotFoundException("User not found.")
+        
+        for key, value in update_data.items():
+            if hasattr(user, key) and value is not None:
+                setattr(user, key, value)
+                
+        return await self.repository.update_user(user)
+
     async def authenticate_credentials(self, email: str, password_raw: str) -> dict[str, Any]:
         """
         Validates username and password. Checks if MFA is required.
@@ -251,6 +265,19 @@ class AuthService:
             
         logger.warning("MFA activation failed: incorrect code", user_id=str(user_id))
         return False
+
+    async def disable_mfa(self, user_id: uuid.UUID) -> bool:
+        """
+        Disables MFA for the user.
+        """
+        user = await self.repository.get_user_by_id(user_id)
+        if not user:
+            raise NotFoundException("User not found")
+            
+        user.is_mfa_enabled = False
+        user.mfa_secret = None
+        logger.info("MFA successfully disabled", user_id=str(user_id))
+        return True
 
     async def login_mfa_verify(self, email: str, code: str) -> dict[str, Any]:
         """

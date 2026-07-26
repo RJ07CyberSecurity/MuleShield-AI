@@ -10,6 +10,7 @@ export interface AuthUser {
   is_active: boolean;
   is_mfa_enabled: boolean;
   roles: string[];
+  avatar_url?: string;
 }
 
 interface AuthState {
@@ -21,9 +22,13 @@ interface AuthState {
   initialize: () => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: AuthUser) => void;
+  updateProfile: (data: Partial<AuthUser>) => Promise<void>;
+  setupMfa: () => Promise<{ secret: string; qr_code_uri: string }>;
+  verifyMfa: (code: string) => Promise<void>;
+  disableMfa: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
@@ -51,6 +56,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           is_active: raw.is_active,
           is_mfa_enabled: raw.is_mfa_enabled,
           roles,
+          avatar_url: raw.avatar_url,
         };
         set({
           user: u,
@@ -88,4 +94,64 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   setUser: (user) => set({ user, isAuthenticated: true }),
+
+  updateProfile: async (data: Partial<AuthUser>) => {
+    try {
+      const response = await apiClient.patch<any>("/api/v1/auth/me", data);
+      if (response && response.success && response.data) {
+        set((state) => ({
+          user: state.user ? { ...state.user, ...data } : null,
+        }));
+      } else if (response && !response.success) {
+        throw new Error(response.message || "Failed to update profile");
+      }
+    } catch (e: any) {
+      console.error("Failed to update profile", e);
+      throw e;
+    }
+  },
+  setupMfa: async () => {
+    try {
+      const response = await apiClient.post<any>("/api/v1/auth/mfa/setup");
+      if (response && response.success) {
+        return response.data;
+      }
+      throw new Error(response?.message || "Failed to setup MFA");
+    } catch (e: any) {
+      console.error("MFA setup failed", e);
+      throw e;
+    }
+  },
+  verifyMfa: async (code: string) => {
+    try {
+      const { user } = get();
+      if (!user) throw new Error("No user found");
+      const response = await apiClient.post<any>("/api/v1/auth/mfa/verify", { email: user.email, code });
+      if (response && response.success) {
+        set((state) => ({
+          user: state.user ? { ...state.user, is_mfa_enabled: true } : null,
+        }));
+      } else {
+        throw new Error(response?.message || "Failed to verify MFA");
+      }
+    } catch (e: any) {
+      console.error("MFA verification failed", e);
+      throw e;
+    }
+  },
+  disableMfa: async () => {
+    try {
+      const response = await apiClient.post<any>("/api/v1/auth/mfa/disable");
+      if (response && response.success) {
+        set((state) => ({
+          user: state.user ? { ...state.user, is_mfa_enabled: false } : null,
+        }));
+      } else {
+        throw new Error(response?.message || "Failed to disable MFA");
+      }
+    } catch (e: any) {
+      console.error("MFA disable failed", e);
+      throw e;
+    }
+  },
 }));

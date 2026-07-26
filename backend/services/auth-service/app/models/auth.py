@@ -79,6 +79,7 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    avatar_url: Mapped[str | None] = mapped_column(String(500000), nullable=True)
     
     # Password History (comma separated hashes)
     password_history: Mapped[str | None] = mapped_column(String(500), nullable=True, default="")

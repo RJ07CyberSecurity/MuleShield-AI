@@ -41,6 +41,13 @@ class AuthRepository:
         await self.session.flush()  # Populates user.id and timestamps
         return user
 
+    async def update_user(self, user: User) -> User:
+        """
+        Updates an existing User record.
+        """
+        await self.session.flush()
+        return user
+
     async def get_role_by_name(self, name: str) -> Role | None:
         """
         Retrieves a role by its unique name, eager-loading its permissions.

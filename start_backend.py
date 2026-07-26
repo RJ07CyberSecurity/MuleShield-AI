@@ -20,7 +20,8 @@ dependencies = [
     "cryptography",
     "python-multipart",
     "openpyxl",
-    "python-dotenv"
+    "python-dotenv",
+    "websockets",         # Required for Gateway WebSocket proxy (/ws/cases)
 ]
 
 print("Installing required Python packages...")

@@ -14,6 +14,7 @@ from app.schemas.auth import (
     PhoneOtpVerifyRequest,
     ForgotPasswordLinkRequest,
     PasswordResetVerifyRequest,
+    UserUpdateRequest,
 )
 from app.dependencies.auth import get_auth_service, get_current_user, oauth2_scheme
 from app.services.auth_service import AuthService
@@ -143,6 +144,26 @@ async def login_mfa_verify(
         success=True,
         message="MFA challenge passed. Sessions started.",
         data=TokenResponse(**auth_result),
+        request_id=request.state.request_id
+    )
+
+
+@router.post("/mfa/disable", response_model=ResponseEnvelope[dict])
+async def disable_mfa(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service)
+) -> ResponseEnvelope[dict]:
+    """
+    Disables MFA for the authenticated user.
+    """
+    await service.disable_mfa(current_user.id)
+    await service.repository.session.commit()
+    
+    return ResponseEnvelope(
+        success=True,
+        message="MFA has been successfully deactivated.",
+        data={"is_mfa_enabled": False},
         request_id=request.state.request_id
     )
 
@@ -278,6 +299,36 @@ async def get_me(
         data=UserResponse.model_validate(current_user),
         request_id=request.state.request_id
     )
+
+@router.patch("/me", response_model=ResponseEnvelope[UserResponse])
+async def update_me(
+    request: Request,
+    payload: UserUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service)
+) -> ResponseEnvelope[UserResponse]:
+    """
+    Updates profile information of the currently authenticated user.
+    """
+    try:
+        update_data = payload.model_dump(exclude_unset=True)
+        updated_user = await service.update_user_profile(current_user.id, update_data)
+        await service.repository.session.commit()
+        
+        return ResponseEnvelope(
+            success=True,
+            message="User profile updated successfully.",
+            data=UserResponse.model_validate(updated_user),
+            request_id=request.state.request_id
+        )
+    except Exception as e:
+        import traceback
+        return ResponseEnvelope(
+            success=False,
+            message=f"Error: {str(e)}\n{traceback.format_exc()}",
+            data=None,
+            request_id=request.state.request_id
+        )
 
 @router.post("/forgot-password/send-link", response_model=ResponseEnvelope[dict])
 async def forgot_password_send_link(

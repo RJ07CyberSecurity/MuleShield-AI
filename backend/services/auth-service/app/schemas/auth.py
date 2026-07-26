@@ -42,6 +42,12 @@ class UserLoginRequest(BaseModel):
     password: str = Field(...)
 
 
+class UserUpdateRequest(BaseModel):
+    """Schema for updating user profile."""
+    avatar_url: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+
 class UserResponse(BaseModel):
     """Schema for returning user profiles."""
     id: uuid.UUID
@@ -51,6 +57,7 @@ class UserResponse(BaseModel):
     is_active: bool
     is_mfa_enabled: bool
     roles: list[RoleResponse] = []
+    avatar_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
