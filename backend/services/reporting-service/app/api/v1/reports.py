@@ -120,10 +120,18 @@ async def generate_report(
     logger.info("Generating report", account_id=payload.account_id, type=payload.report_type)
     
     # 1. Fetch Account
+    account = None
     if payload.account_id:
-        acct_uuid = uuid.UUID(payload.account_id)
-        acct_stmt = select(Account).where(Account.id == acct_uuid)
-    else:
+        try:
+            acct_uuid = uuid.UUID(payload.account_id)
+            acct_stmt = select(Account).where(Account.id == acct_uuid)
+        except ValueError:
+            acct_stmt = select(Account).where(Account.account_number == payload.account_id)
+            
+        acct_res = await db.execute(acct_stmt)
+        account = acct_res.scalars().first()
+
+    if not account:
         alert_stmt = select(Alert).order_by(Alert.score.desc()).limit(1)
         alert_res = await db.execute(alert_stmt)
         top_alert = alert_res.scalars().first()
@@ -132,8 +140,8 @@ async def generate_report(
         else:
             acct_stmt = select(Account).limit(1)
             
-    acct_res = await db.execute(acct_stmt)
-    account = acct_res.scalars().first()
+        acct_res = await db.execute(acct_stmt)
+        account = acct_res.scalars().first()
     
     if not account:
         raise HTTPException(
@@ -245,7 +253,12 @@ async def generate_report(
             txs=txs
         )
         
-    case_uuid = uuid.UUID(payload.case_id) if payload.case_id else None
+    case_uuid = None
+    if payload.case_id:
+        try:
+            case_uuid = uuid.UUID(payload.case_id)
+        except ValueError:
+            pass
     
     # Store Report in database
     db_report = Report(
@@ -278,6 +291,43 @@ async def generate_report(
             recommendations=db_report.recommendations
         )
     )
+class ReportUpdateRequest(BaseModel):
+    executive_summary: str | None = None
+    narrative: str | None = None
+    recommendations: str | None = None
+
+@router.put("/{report_id}", response_model=ResponseEnvelope)
+async def update_report(
+    report_id: str,
+    payload: ReportUpdateRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    report_uuid = uuid.UUID(report_id)
+    stmt = select(Report).where(Report.id == report_uuid)
+    res = await db.execute(stmt)
+    report = res.scalars().first()
+    
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found"
+        )
+        
+    if payload.executive_summary is not None:
+        report.executive_summary = payload.executive_summary
+    if payload.narrative is not None:
+        report.narrative = payload.narrative
+    if payload.recommendations is not None:
+        report.recommendations = payload.recommendations
+        
+    await db.commit()
+    
+    return ResponseEnvelope(
+        success=True,
+        message="Report updated successfully.",
+        data=None
+    )
+
 @router.get("", response_model=ResponseEnvelope[list[ReportResponse]])
 async def list_reports(
     request: Request,

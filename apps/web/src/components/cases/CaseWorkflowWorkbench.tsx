@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Case } from "../../types/cases";
 import { useCaseStore } from "../../store/useCaseStore";
 import { useUIStore } from "../../store/useUIStore";
+import { formatCurrency } from "../../utils/currency";
 
 interface CaseWorkflowWorkbenchProps {
   activeCase: Case;
@@ -109,7 +110,7 @@ export default function CaseWorkflowWorkbench({ activeCase }: CaseWorkflowWorkbe
           </div>
           <div className="flex justify-between items-center">
             <span className="text-on-surface-variant">Total Value</span>
-            <span className="font-bold text-on-surface">${activeCase.totalAmount.toLocaleString()}</span>
+            <span className="font-bold text-on-surface">{formatCurrency(activeCase.totalAmount, activeCase.currency)}</span>
           </div>
         </div>
       </div>

@@ -29,7 +29,7 @@ function mapBackendAlert(a: any): Alert {
     id: String(a.id),
     transactionId: `TX-${String(a.id).slice(0, 6).toUpperCase()}`,
     amount: parseFloat(String(a.score)) * 500, // derived estimate
-    currency: "USD",
+    currency: a.currency || "USD",
     sourceAccount: `ACC-${String(a.account_id).slice(0, 8).toUpperCase()}`,
     destinationAccount: `ACC-${String(a.customer_id).slice(0, 8).toUpperCase()}`,
     riskScore: Math.round(a.score),

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, Numeric, DateTime, Float, ForeignKey, Text, JSON, Date, Boolean
+from sqlalchemy import String, Numeric, DateTime, Float, ForeignKey, Text, JSON, Date, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from shared.database.postgres import Base
 
@@ -213,6 +213,7 @@ class Alert(Base):
     score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     trigger_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     assigned_officer_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), default="USD", nullable=False)
     risk_score_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("risk_scores.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -237,10 +238,19 @@ class Case(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
     alert_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("alerts.id", ondelete="SET NULL"), nullable=True, index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    priority: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    stage: Mapped[str | None] = mapped_column(String(50), default="Alert Triage", nullable=True)
+    risk_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ai_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     officer_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     recommended_action: Mapped[str | None] = mapped_column(String(255), nullable=True)
     legal_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    currency: Mapped[str] = mapped_column(String(10), default="USD", nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="OPEN", nullable=False)  # OPEN, INVESTIGATING, FROZEN, CLOSED
     escalation_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     escalated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)

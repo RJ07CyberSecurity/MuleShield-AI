@@ -9,14 +9,18 @@ import { useUIStore } from "../../store/useUIStore";
 import { useAlertStore } from "../../store/useAlertStore";
 import { useCaseStore } from "../../store/useCaseStore";
 import { useAuthStore } from "../../store/useAuthStore";
+import { useInvestigationSocket } from "../../hooks/useInvestigationSocket";
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { sidebarCollapsed, mobileMenuOpen, setMobileMenuOpen } = useUIStore();
   const { alerts, fetchAlerts } = useAlertStore();
-  const { cases, fetchCases } = useCaseStore();
+  const { cases, fetchCases, activeCaseId } = useCaseStore();
   const { user, isAuthenticated, isLoading, initialize, logout } = useAuthStore();
+
+  // Mount the global real-time socket
+  useInvestigationSocket({ activeCaseId, isAuthenticated });
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);

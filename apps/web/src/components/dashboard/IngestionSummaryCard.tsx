@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Activity, ShieldAlert, DollarSign, Calendar, ArrowRight, RefreshCw, AlertTriangle } from "lucide-react";
+import { formatCurrency } from "../../utils/currency";
 import { apiClient } from "../../services/api-client";
 import { useUIStore } from "../../store/useUIStore";
 
@@ -101,7 +102,7 @@ export default function IngestionSummaryCard({ ingestionId, onViewFlagged }: Ing
           <div>
             <span className="text-[8px] font-label-mono text-on-surface-variant uppercase tracking-wider block font-bold">Total Volume</span>
             <span className="text-base font-black text-on-surface font-label-mono leading-none">
-              ${data.total_volume.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              {formatCurrency(data.total_volume, (data as any).currency || "USD")}
             </span>
             <span className="text-[9px] text-on-surface-variant font-label-mono">{data.total_transactions} txs</span>
           </div>

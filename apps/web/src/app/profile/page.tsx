@@ -85,6 +85,47 @@ export default function ProfilePage() {
     setIsIDCardModalOpen(true);
   };
 
+  const handleEnableMfa = async () => {
+    setMfaLoading(true);
+    try {
+      const data = await setupMfa();
+      setMfaSetupData(data);
+      setIsMfaModalOpen(true);
+    } catch (error: any) {
+      addToast(error.message || "Failed to setup MFA", "error");
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const handleVerifyMfa = async () => {
+    setMfaLoading(true);
+    try {
+      await verifyMfa(mfaVerifyCode);
+      setIsMfaModalOpen(false);
+      setMfaSetupData(null);
+      setMfaVerifyCode("");
+      addToast("MFA enabled successfully", "success");
+    } catch (error: any) {
+      addToast(error.message || "Failed to verify MFA code", "error");
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const handleDisableMfa = async () => {
+    if (!confirm("Are you sure you want to disable Multi-Factor Authentication?")) return;
+    setMfaLoading(true);
+    try {
+      await disableMfa();
+      addToast("MFA disabled successfully", "success");
+    } catch (error: any) {
+      addToast(error.message || "Failed to disable MFA", "error");
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       

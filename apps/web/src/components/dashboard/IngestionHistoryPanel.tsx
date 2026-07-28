@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { RefreshCw, FileText, ChevronRight, Clock, Database, ChevronDown, ChevronUp } from "lucide-react";
+import { formatCurrency } from "../../utils/currency";
 import { apiClient } from "../../services/api-client";
 import { useAuthStore } from "../../store/useAuthStore";
 
@@ -10,6 +11,7 @@ interface IngestionItem {
   ingestion_id: string;
   transaction_count: number;
   total_volume: number;
+  currency?: string;
   status: string;
   uploaded_at: string;
 }
@@ -158,8 +160,8 @@ export default function IngestionHistoryPanel({ activeIngestionId, onSelect }: I
                       </div>
                       <div>
                         <p className="text-[9px] font-label-mono text-on-surface-variant uppercase">Volume</p>
-                        <p className="text-xs font-black text-primary font-label-mono">
-                          ${item.total_volume.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        <p className="text-sm font-black text-primary font-label-mono leading-none">
+                          {formatCurrency(item.total_volume, item.currency || "USD")}
                         </p>
                       </div>
                       <span className={`px-2 py-0.5 rounded border text-[8px] font-bold font-label-mono uppercase ${

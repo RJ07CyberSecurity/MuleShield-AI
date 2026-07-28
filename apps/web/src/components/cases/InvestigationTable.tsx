@@ -67,6 +67,22 @@ export default function InvestigationTable({
     }
   };
 
+  const getStageBadgeStyles = (stage?: string) => {
+    switch (stage?.toLowerCase()) {
+      case "alert triage": return "bg-blue-500/10 text-blue-500 border border-blue-500/20";
+      case "escalated": return "bg-orange-500/10 text-orange-500 border border-orange-500/20";
+      case "investigation started": return "bg-cyan-500/10 text-cyan-500 border border-cyan-500/20";
+      case "evidence collection": return "bg-purple-500/10 text-purple-500 border border-purple-500/20";
+      case "transaction analysis": return "bg-indigo-500/10 text-indigo-500 border border-indigo-500/20";
+      case "network analysis": return "bg-indigo-500/10 text-indigo-500 border border-indigo-500/20";
+      case "risk assessment": return "bg-yellow-500/10 text-yellow-500 border border-yellow-500/20";
+      case "supervisor review": return "bg-pink-500/10 text-pink-500 border border-pink-500/20";
+      case "closed": return "bg-green-500/10 text-green-500 border border-green-500/20";
+      case "rejected": return "bg-red-500/10 text-red-500 border border-red-500/20";
+      default: return "bg-primary/10 text-primary border border-primary/20";
+    }
+  };
+
   const getPriorityColor = (priority: string = "LOW") => {
     if (priority === "CRITICAL") return "text-risk-critical border-risk-critical/20 bg-risk-critical/10";
     if (priority === "HIGH") return "text-risk-high border-risk-high/20 bg-risk-high/10";
@@ -172,10 +188,7 @@ export default function InvestigationTable({
                 </td>
                 <td className="px-4 py-4 font-semibold text-on-surface truncate">
                   <div className="flex flex-col">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full ${c.status === "CLOSED" ? "bg-on-surface-variant/40" : c.status === "INVESTIGATING" ? "bg-risk-high animate-pulse" : "bg-primary"}`}></span>
-                      {c.currentStage}
-                    </span>
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold ${getStageBadgeStyles(c.currentStage)}`}>{c.currentStage}</span>
                     <span className="text-[9px] text-on-surface-variant ml-3 font-normal mt-0.5">{c.evidenceCount} Evidences</span>
                   </div>
                 </td>
@@ -274,10 +287,7 @@ export default function InvestigationTable({
               {/* Status & SLA */}
               <div className="flex justify-between items-center bg-surface-container-highest/30 p-2 rounded-lg border border-outline-variant/10">
                 <div className="flex flex-col">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-on-surface">
-                    <span className={`w-1.5 h-1.5 rounded-full ${c.status === "CLOSED" ? "bg-on-surface-variant/40" : c.status === "INVESTIGATING" ? "bg-risk-high animate-pulse" : "bg-primary"}`}></span>
-                    {c.currentStage}
-                  </span>
+                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[9px] font-bold ${getStageBadgeStyles(c.currentStage)}`}>{c.currentStage}</span>
                   <span className="text-[9px] text-on-surface-variant font-normal mt-0.5 ml-3">{c.evidenceCount} Evidences</span>
                 </div>
                 <div className={`font-label-mono font-semibold text-xs ${c.slaRemaining?.startsWith("-") ? "text-risk-critical" : "text-on-surface-variant"}`}>

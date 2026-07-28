@@ -34,6 +34,7 @@ class SummaryResponse(BaseModel):
     total_accounts: int
     total_transactions: int
     total_volume: float
+    currency: str | None = None
     start_date: str
     end_date: str
     flagged_accounts_count: int
@@ -81,7 +82,7 @@ def parse_excel(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
                     "sender_account": sender,
                     "receiver_account": receiver,
                     "amount": amount,
-                    "currency": str(row_dict.get("currency") or "USD").strip().upper(),
+                    "currency": str(row_dict.get("currency")).strip().upper() if row_dict.get("currency") else _detect_currency(str(row_dict.get("amount") or "")) or "USD",
                     "timestamp": timestamp,
                     "transaction_type": str(row_dict.get("transaction_type") or "TRANSFER").strip().upper(),
                     "payment_channel": str(row_dict.get("payment_channel") or "ACH").strip().upper(),
@@ -149,7 +150,7 @@ def parse_csv(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
                     "sender_account": sender,
                     "receiver_account": receiver,
                     "amount": amount,
-                    "currency": str(row_dict.get("currency") or "USD").strip().upper(),
+                    "currency": str(row_dict.get("currency")).strip().upper() if row_dict.get("currency") else _detect_currency(str(row_dict.get("amount") or "")) or "USD",
                     "timestamp": timestamp,
                     "transaction_type": str(row_dict.get("transaction_type") or "TRANSFER").strip().upper(),
                     "payment_channel": str(row_dict.get("payment_channel") or "ACH").strip().upper(),
@@ -169,6 +170,16 @@ def parse_csv(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
         
     return valid, invalid
 
+def _detect_currency(val: str) -> str | None:
+    """Detect currency from string, e.g. amount or text."""
+    if not val:
+        return None
+    val = str(val).upper()
+    if "$" in val or "USD" in val: return "USD"
+    if "€" in val or "EUR" in val: return "EUR"
+    if "£" in val or "GBP" in val: return "GBP"
+    if "₹" in val or "INR" in val: return "INR"
+    return None
 
 def _clean_amount(val: str) -> Decimal | None:
     """Parse an amount string from a bank statement, returning None if unparseable."""
@@ -336,7 +347,7 @@ def parse_pdf(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
                             "sender_account":   sender_account,
                             "receiver_account": receiver_account,
                             "amount":           Decimal(str(amount)),
-                            "currency":         "INR",
+                            "currency":         _detect_currency(" ".join(str(c) for c in row if c)) or "INR",
                             "timestamp":        timestamp,
                             "transaction_type": txn_type,
                             "payment_channel":  _detect_channel(narration),
@@ -457,7 +468,7 @@ def _parse_pdf_text_fallback(all_text: str, owner_account: str) -> tuple[list[di
                 "sender_account":   sender_account,
                 "receiver_account": receiver_account,
                 "amount":           amount,
-                "currency":         "INR",
+                "currency":         _detect_currency(line) or "INR",
                 "timestamp":        timestamp,
                 "transaction_type": txn_type,
                 "payment_channel":  _detect_channel(line),
@@ -542,7 +553,7 @@ def _parse_pdf_text_fallback(all_text: str, owner_account: str) -> tuple[list[di
                                 "sender_account": sender,
                                 "receiver_account": receiver,
                                 "amount": amount,
-                                "currency": "USD",
+                                "currency": _detect_currency(str(row[amount_idx] or "")) or "USD",
                                 "timestamp": timestamp,
                                 "transaction_type": str(row[type_idx]).strip().upper() if type_idx != -1 and row[type_idx] else "TRANSFER",
                                 "payment_channel": str(row[channel_idx]).strip().upper() if channel_idx != -1 and row[channel_idx] else "ACH",
@@ -614,7 +625,7 @@ def _parse_pdf_text_fallback(all_text: str, owner_account: str) -> tuple[list[di
                                 "sender_account": sender,
                                 "receiver_account": receiver,
                                 "amount": amount,
-                                "currency": "INR",
+                                "currency": _detect_currency(line) or "INR",
                                 "timestamp": timestamp,
                                 "transaction_type": txn_type,
                                 "payment_channel": "UPI" if "UPI" in counterparty else "TRANSFER",
@@ -646,7 +657,7 @@ def _parse_pdf_text_fallback(all_text: str, owner_account: str) -> tuple[list[di
                                     "sender_account": sender,
                                     "receiver_account": receiver,
                                     "amount": amount,
-                                    "currency": "USD",
+                                    "currency": _detect_currency(line) or "USD",
                                     "timestamp": timestamp,
                                     "transaction_type": "TRANSFER",
                                     "payment_channel": "ACH",
@@ -989,11 +1000,9 @@ async def get_ingestion_summary(
     
     owner_id = request.headers.get("x-user-id")
     if not owner_id:
-        return ResponseEnvelope(
-            success=False,
-            message="Unauthorized",
-            data={},
-            request_id=request.state.request_id
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized"
         )
 
     # 1. Fetch transactions count & aggregate values
@@ -1045,6 +1054,7 @@ async def get_ingestion_summary(
             total_accounts=len(unique_accts),
             total_transactions=len(txs),
             total_volume=total_volume,
+            currency=txs[0].currency if txs else "USD",
             start_date=start_date,
             end_date=end_date,
             flagged_accounts_count=flagged_count
@@ -1095,6 +1105,7 @@ class IngestionListItem(BaseModel):
     ingestion_id: str
     transaction_count: int
     total_volume: float
+    currency: str | None = None
     status: str
     uploaded_at: str
 
@@ -1113,6 +1124,7 @@ async def list_ingestions(
         Transaction.ingestion_id,
         func.count(Transaction.id).label("tx_count"),
         func.sum(Transaction.amount).label("total_volume"),
+        func.max(Transaction.currency).label("currency"),
         func.max(Transaction.status).label("status"),
         func.min(Transaction.timestamp).label("uploaded_at"),
     ).where(
@@ -1131,6 +1143,7 @@ async def list_ingestions(
             ingestion_id=str(r.ingestion_id),
             transaction_count=r.tx_count,
             total_volume=float(r.total_volume or 0),
+            currency=r.currency,
             status=r.status or "CONFIRMED",
             uploaded_at=r.uploaded_at.isoformat() if r.uploaded_at else "",
         )

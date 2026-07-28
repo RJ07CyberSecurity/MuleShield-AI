@@ -4,7 +4,8 @@ import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUIStore } from "../../../store/useUIStore";
-import { apiClient } from "../../../services/api-client";
+import { apiClient } from "@/services/api-client";
+import { formatCurrency } from "@/utils/currency";
 import TimelineChart from "../../../components/cases/TimelineChart";
 import NetworkGraph from "../../../components/dashboard/NetworkGraph";
 
@@ -212,7 +213,7 @@ export default function CaseDetailPage({ params }: PageProps) {
                 </div>
                 <div>
                   <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-1">Annual Income</div>
-                  <div className="text-xs font-display-kpi text-[#16A34A] font-bold truncate">{caseDetails?.customer_income ? `$${caseDetails.customer_income.toLocaleString("en-US")}` : "N/A"}</div>
+                  <div className="text-xs font-display-kpi text-[#16A34A] font-bold truncate">{caseDetails?.customer_income ? formatCurrency(caseDetails.customer_income, activeCase?.currency || "USD") : "N/A"}</div>
                 </div>
                 <div className="col-span-2">
                   <div className="text-[9px] font-label-mono text-outline-variant font-bold uppercase tracking-widest mb-1">Registered Address</div>
@@ -307,14 +308,14 @@ export default function CaseDetailPage({ params }: PageProps) {
           <div className="grid grid-cols-4 gap-6 mb-6">
             <div className="bg-[#11131b] border border-[#282a32] rounded-xl p-4 shadow-md">
               <div className="text-[9px] font-label-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1">Total Assets (Avg)</div>
-              <div className="text-xl font-display-kpi font-bold text-on-surface mb-1">${totalAssets.toLocaleString("en-US")}</div>
+              <div className="text-xl font-display-kpi font-bold text-on-surface mb-1">{formatCurrency(totalAssets, activeCase?.currency || "USD")}</div>
               <div className="text-[9px] font-bold text-risk-high flex items-center gap-1 uppercase tracking-wider">
                 <span className="material-symbols-outlined text-[10px]">trending_up</span> +142% Spikes
               </div>
             </div>
             <div className="bg-[#11131b] border border-[#282a32] rounded-xl p-4 shadow-md">
               <div className="text-[9px] font-label-mono font-bold text-on-surface-variant uppercase tracking-widest mb-1">Total Outflows</div>
-              <div className="text-xl font-display-kpi font-bold text-[#16A34A] mb-1">${totalOutflows.toLocaleString("en-US")}</div>
+              <div className="text-xl font-display-kpi font-bold text-[#16A34A] mb-1">{formatCurrency(totalOutflows, activeCase?.currency || "USD")}</div>
               <div className="text-[9px] font-bold text-[#16A34A] flex items-center gap-1 uppercase tracking-wider">
                 <span className="material-symbols-outlined text-[10px]">update</span> In 15 min Window
               </div>

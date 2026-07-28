@@ -18,8 +18,12 @@ import IngestionSummaryCard from "../../components/dashboard/IngestionSummaryCar
 import FlaggedAccountsTable from "../../components/dashboard/FlaggedAccountsTable";
 import IngestionHistoryPanel from "../../components/dashboard/IngestionHistoryPanel";
 import { apiClient } from "../../services/api-client";
+import { useRouter } from "next/navigation";
+import { useCaseStore } from "../../store/useCaseStore";
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const { createCase } = useCaseStore();
   const { addToast, globalIngestionId, setGlobalIngestionId } = useUIStore();
   const [timeRange, setTimeRange] = useState("24H");
   const [freezeExecuted, setFreezeExecuted] = useState(false);
@@ -385,7 +389,7 @@ export default function DashboardPage() {
                     <th className="px-4 py-3">Transaction Type</th>
                     <th className="px-4 py-3 w-36">Amount</th>
                     <th className="px-4 py-3 text-center w-24">Risk Score</th>
-                    <th className="px-4 py-3 text-right w-28">Status</th>
+                    <th className="px-4 py-3 text-right w-48">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/10">
@@ -405,7 +409,7 @@ export default function DashboardPage() {
                         <td className="px-4 py-4 w-24">
                           <div className="h-5 bg-surface-container-high rounded w-12 mx-auto"></div>
                         </td>
-                        <td className="px-4 py-4 text-right w-28">
+                        <td className="px-4 py-4 text-right w-48">
                           <div className="h-3 bg-surface-container-high rounded w-16 ml-auto"></div>
                         </td>
                       </tr>
@@ -448,29 +452,29 @@ export default function DashboardPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right truncate">
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-3">
                             <span className="inline-flex items-center gap-1.5 text-xs text-on-surface">
                               {tx.status === "Investigating" && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-risk-critical animate-pulse"></span>
-                              )}
-                              {tx.status}
-                            </span>
-                            {tx.status === "Investigating" && (
-                              <button
+                              <span className="w-1.5 h-1.5 rounded-full bg-risk-critical animate-pulse"></span>
+                            )}
+                            {tx.status}
+                          </span>
+                          {(tx.status === "Investigating" || tx.status === "In Queue") && (
+                            <button
                                 onClick={async (e) => {
                                   e.stopPropagation();
                                   
-                                  const { useCaseStore } = require("../../store/useCaseStore");
-                                  await useCaseStore.getState().createCase({
+                                  await createCase({
                                     title: `Investigation: ${tx.id}`,
                                     description: `Suspicious transaction of type ${tx.type} detected with a risk score of ${tx.score}.`,
                                     customerName: tx.id,
                                     priority: tx.riskLevel === "critical" ? "CRITICAL" : tx.riskLevel === "high" ? "HIGH" : "MEDIUM",
-                                    riskScore: parseInt(tx.score.split("/")[0], 10) || 75
+                                    riskScore: parseInt(tx.score.split("/")[0], 10) || 75,
+                                    isEscalated: true
                                   });
                                   
-                                  window.location.href = "/cases";
+                                  router.push("/cases");
                                 }}
                                 className="px-2 py-1 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-on-primary rounded text-[10px] font-bold transition-all"
                               >
@@ -544,24 +548,24 @@ export default function DashboardPage() {
 
                       <div className="flex items-center justify-between pt-2 border-t border-outline-variant/10">
                         <span className="inline-flex items-center gap-1.5 text-xs text-on-surface">
-                          {tx.status === "Investigating" && (
+                        {tx.status === "Investigating" && (
                             <span className="w-1.5 h-1.5 rounded-full bg-risk-critical animate-pulse"></span>
                           )}
                           {tx.status}
                         </span>
-                        {tx.status === "Investigating" && (
+                        {(tx.status === "Investigating" || tx.status === "In Queue") && (
                           <button
                             onClick={async (e) => {
                               e.stopPropagation();
-                              const { useCaseStore } = require("../../store/useCaseStore");
-                              await useCaseStore.getState().createCase({
+                              await createCase({
                                 title: `Investigation: ${tx.id}`,
                                 description: `Suspicious transaction of type ${tx.type} detected with a risk score of ${tx.score}.`,
                                 customerName: tx.id,
                                 priority: tx.riskLevel === "critical" ? "CRITICAL" : tx.riskLevel === "high" ? "HIGH" : "MEDIUM",
-                                riskScore: parseInt(tx.score.split("/")[0], 10) || 75
+                                riskScore: parseInt(tx.score.split("/")[0], 10) || 75,
+                                  isEscalated: true
                               });
-                              window.location.href = "/cases";
+                              router.push("/cases");
                             }}
                             className="px-2 py-1 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-on-primary rounded text-[10px] font-bold transition-all"
                           >

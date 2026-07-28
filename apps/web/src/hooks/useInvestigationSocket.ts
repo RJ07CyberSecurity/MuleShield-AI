@@ -99,6 +99,10 @@ export function useInvestigationSocket({
     if (!mountedRef.current) return;
     if (!isAuthenticated) return;
 
+    if (socketRef.current?.readyState === WebSocket.OPEN || socketRef.current?.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) {
       console.warn("[InvSocket] No auth token found — skipping WebSocket connection.");
@@ -126,8 +130,14 @@ export function useInvestigationSocket({
       try {
         const msg = JSON.parse(event.data) as InvestigationEvent;
 
+        // Check if the event was triggered by the current user
+        const { user } = useAuthStore.getState();
+        const isSelf = (msg as any).actor_id && String((msg as any).actor_id) === String(user?.id);
+
         // Let the store handle state updates
         applyRemoteEvent(msg);
+
+        if (isSelf) return; // Do not show toasts for actions triggered by yourself
 
         // Show toast notifications for significant events (non-self-originated)
         switch (msg.type) {
@@ -199,7 +209,6 @@ export function useInvestigationSocket({
 
       const ws = socketRef.current;
       if (ws) {
-        // Send left_case before closing so presence is cleared server-side
         if (activeCaseIdRef.current) {
           try {
             ws.send(JSON.stringify({ type: "left_case", case_id: activeCaseIdRef.current }));
@@ -207,6 +216,7 @@ export function useInvestigationSocket({
             // ignore if already closing
           }
         }
+        ws.onclose = null; // Prevent reconnect loop from teardown
         ws.close(1000, "Component unmounted");
         socketRef.current = null;
       }
@@ -219,12 +229,17 @@ export function useInvestigationSocket({
     const ws = socketRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
+    // Send left_case for the PREVIOUS activeCaseIdRef.current if it was set
+    if (activeCaseIdRef.current && activeCaseIdRef.current !== activeCaseId) {
+      sendJson({ type: "left_case", case_id: activeCaseIdRef.current });
+    }
+
     if (activeCaseId) {
       sendJson({ type: "viewing_case", case_id: activeCaseId });
-    } else {
-      // Leaving case view — notify for any previously viewed case
-      // We can't know the old case_id here; the server cleans up on disconnect anyway.
     }
+    
+    // Update the ref to the new activeCaseId
+    activeCaseIdRef.current = activeCaseId;
   }, [activeCaseId, sendJson]);
 
   /** Manually send a left_case notification (call when closing the detail panel). */

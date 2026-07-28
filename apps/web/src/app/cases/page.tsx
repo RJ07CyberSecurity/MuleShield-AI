@@ -4,7 +4,6 @@ import { useState, useMemo, useEffect } from "react";
 import { useUIStore } from "../../store/useUIStore";
 import { useCaseStore } from "../../store/useCaseStore";
 import { useAuthStore } from "../../store/useAuthStore";
-import { useInvestigationSocket } from "../../hooks/useInvestigationSocket";
 import KPIStats from "../../components/cases/KPIStats";
 import FilterBar from "../../components/cases/FilterBar";
 import InvestigationTable from "../../components/cases/InvestigationTable";
@@ -12,7 +11,7 @@ import CaseDetailsPanel from "../../components/cases/CaseDetailsPanel";
 
 export default function CasesPage() {
   const { addToast } = useUIStore();
-  const { cases, fetchCases, isLoading, updateCaseStatus, presenceMap, connectedUsers } = useCaseStore();
+  const { cases, fetchCases, isLoading, updateCaseStatus, presenceMap, connectedUsers, activeCaseId, setActiveCaseId } = useCaseStore();
   const { user, isAuthenticated } = useAuthStore();
 
   const [filterStatus, setFilterStatus] = useState("All Active");
@@ -20,25 +19,33 @@ export default function CasesPage() {
   const [filterAssignee, setFilterAssignee] = useState("All");
 
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-  const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
 
-  // ── Real-time shared workspace ───────────────────────────────────────────
-  // Mount the WebSocket hook — single instance for the entire Investigation page.
-  // Handles connection, reconnection, presence, and dispatching remote events.
-  const { notifyLeftCase } = useInvestigationSocket({
-    activeCaseId,
-    isAuthenticated,
-  });
-
-  // Initial fetch of shared cases on mount
+  // Initial fetch of shared cases on mount and window focus
   useEffect(() => {
     fetchCases();
+
+    const handleFocus = () => {
+      fetchCases();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        fetchCases();
+      }
+    });
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
   }, [fetchCases]);
 
   // ── Filters ──────────────────────────────────────────────────────────────
   const filteredCases = useMemo(() => {
     return cases.filter((c) => {
-      if (filterStatus === "Closed" && c.status !== "CLOSED") return false;
+      if (filterStatus === "All Active" && c.status === "CLOSED") return false;
+        if (filterStatus === "Closed" && c.status !== "CLOSED") return false;
       if (filterStatus === "NEW" && c.status !== "NEW") return false;
       if (filterStatus === "INVESTIGATING" && c.status !== "INVESTIGATING") return false;
       if (filterStatus === "SAR_DRAFTED" && c.status !== "SAR_DRAFTED") return false;
@@ -100,10 +107,6 @@ export default function CasesPage() {
   };
 
   const handleCloseCase = () => {
-    // Notify the server that this user has left the case view
-    if (activeCaseId) {
-      notifyLeftCase(activeCaseId);
-    }
     setActiveCaseId(null);
   };
 

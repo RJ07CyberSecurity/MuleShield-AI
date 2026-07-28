@@ -4,7 +4,8 @@ import { use, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUIStore } from "../../../../store/useUIStore";
-import { apiClient } from "../../../../services/api-client";
+import { apiClient } from "@/services/api-client";
+import { formatCurrency } from "@/utils/currency";
 import { motion } from "framer-motion";
 
 interface PageProps {
@@ -238,7 +239,7 @@ export default function SubjectProfilePage({ params }: PageProps) {
               <span className="text-on-surface-variant font-medium">Annual Income</span>
               <span className="text-primary font-bold font-label-mono text-xs">
                 {profile?.annual_income
-                  ? (piiRevealed ? `$${profile.annual_income.toLocaleString()} USD` : "$•••••• USD")
+                  ? (piiRevealed ? formatCurrency(profile.annual_income, activeCase?.currency || "USD") : `•••••• ${activeCase?.currency || "USD"}`)
                   : "—"}
               </span>
             </div>

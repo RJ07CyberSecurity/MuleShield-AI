@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Case } from "../../types/cases";
 import { useUIStore } from "../../store/useUIStore";
+import { formatCurrency } from "../../utils/currency";
 
 interface SARFormProps {
   activeCase: Case;
@@ -14,7 +15,7 @@ export default function SARForm({ activeCase }: SARFormProps) {
   const [institution, setInstitution] = useState("GLOBAL TRUST BANK (US-HQ)");
   const [jurisdiction, setJurisdiction] = useState("US-NY");
   const [narrative, setNarrative] = useState(
-    `Forensic review of case ${activeCase.id} revealed an anomaly score of ${activeCase.riskScore}/100. Target accounts ${activeCase.muleNodes.filter(n => n.includes("ACC")).join(" and ")} engaged in suspicious layering behavior. Intermediary nodes transfer patterns suggest automated money mule ring structured deposits exceeding ${activeCase.totalAmount.toLocaleString()} USD across multiple device sessions.`
+    `Forensic review of case ${activeCase.id} revealed an anomaly score of ${activeCase.riskScore}/100. Target accounts ${activeCase.muleNodes.filter(n => n.includes("ACC")).join(" and ")} engaged in suspicious layering behavior. Intermediary nodes transfer patterns suggest automated money mule ring structured deposits exceeding ${formatCurrency(activeCase.totalAmount, activeCase.currency)} across multiple device sessions.`
   );
   const [isExported, setIsExported] = useState(false);
 
@@ -165,7 +166,7 @@ export default function SARForm({ activeCase }: SARFormProps) {
               </div>
               <div className="flex justify-between items-center pb-2 border-b border-outline-variant/10">
                 <span className="text-on-surface-variant font-medium">Aggregated Subject Value</span>
-                <span className="font-bold text-primary font-label-mono">${activeCase.totalAmount.toLocaleString()} USD</span>
+                <span className="font-bold text-primary font-label-mono">{formatCurrency(activeCase.totalAmount, activeCase.currency)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-on-surface-variant font-medium">Subject Nodes Involved</span>

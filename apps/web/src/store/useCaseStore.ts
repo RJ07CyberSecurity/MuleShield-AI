@@ -4,15 +4,18 @@ import { apiClient } from "../services/api-client";
 
 interface CaseState {
   cases: Case[];
+  activeCaseId: string | null;
   isLoading: boolean;
   error: string | null;
 
   // Actions
+  setActiveCaseId: (id: string | null) => void;
   fetchCases: () => Promise<void>;
   createCase: (customData?: any) => Promise<void>;
   updateCaseStatus: (id: string, status: Case["status"]) => Promise<void>;
   assignCase: (id: string, officerId: string, officerName?: string) => Promise<void>;
   addCaseNote: (id: string, noteText: string) => Promise<void>;
+  updateCaseMetadata: (id: string, updates: Partial<Case>) => Promise<void>;
   presenceMap: Record<string, string[]>;
   connectedUsers: number;
   applyRemoteEvent: (event: any) => void;
@@ -36,74 +39,65 @@ function mapBackendCase(c: any): Case {
         : c.status === "CLOSED" || c.status === "RESOLVED"
         ? "CLOSED"
         : "NEW",
-    riskScore: c.priority === "CRITICAL" ? 90 : c.priority === "HIGH" ? 70 : 45,
+    priority: c.priority || (c.escalation_status === "ESCALATED" ? "CRITICAL" : "MEDIUM"),
+    stage: c.stage || "Alert Triage",
+    customerName: c.customer_name || c.customer_id || "Unknown Customer",
+    riskScore: c.risk_score || c.riskScore || 75,
+    aiConfidence: c.ai_confidence || c.aiConfidence || 85,
     assignee_id: c.officer_id || c.owner_id,
     assignedTo: (c.officer_id || c.owner_id) ? (cachedUsersMap[c.officer_id || c.owner_id] || `Investigator (${String(c.officer_id || c.owner_id).slice(0, 4)})`) : "Unassigned",
+    createdDate: c.created_at ? new Date(c.created_at).toLocaleDateString() : new Date().toLocaleDateString(),
     createdAt: c.created_at,
-    description: c.description || "No description available.",
-    muleNodes: [`CUST-${String(c.customer_id).slice(0, 8).toUpperCase()}`],
+    description: c.notes || c.description || "No description available.",
+    muleNodes: c.customer_id ? [`CUST-${String(c.customer_id).slice(0, 8).toUpperCase()}`] : [],
     transactionsCount: 0,
     totalAmount: 0,
-    notes: [],
-    
-    // Rich frontend simulations
-    customerName: c.customer_name || "Unknown Entity",
-    bank: c.bank || "MuleShield First National",
-    priority: c.priority === "CRITICAL" ? "CRITICAL" : c.priority === "HIGH" ? "HIGH" : c.riskScore >= 40 ? "MEDIUM" : "LOW",
-    aiConfidence: c.aiConfidence || Math.floor(Math.random() * (98 - 75 + 1) + 75),
-    slaRemaining: c.slaRemaining || `${Math.floor(Math.random() * 48)}h ${Math.floor(Math.random() * 60)}m`,
-    evidenceCount: c.evidenceCount || Math.floor(Math.random() * 10),
-    currentStage: c.currentStage || (c.status === "NEW" ? "Alert Triage" : "Network Analysis"),
-    
-    shapValues: c.shapValues || [
-      { feature: "Rapid Transit", value: 45.2, contribution: "positive" },
-      { feature: "Layering", value: 32.1, contribution: "positive" },
-      { feature: "Geo Risk", value: 18.5, contribution: "positive" },
-      { feature: "Account Age", value: -12.4, contribution: "negative" }
-    ],
-    triggeredRules: c.triggeredRules || ["R1_HIGH_TXN_FREQ", "R3_RAPID_PASS_THROUGH"],
-    
-    timeline: c.timeline || [
-      { id: "t1", stage: "Alert Generated", description: "System flagged anomalous behavior", timestamp: c.created_at, icon: "warning", isCompleted: true },
-      { id: "t2", stage: "Case Created", description: "Auto-escalated to case registry", timestamp: c.created_at, icon: "folder", isCompleted: true },
-      { id: "t3", stage: "Officer Assigned", description: "Assigned to an investigator", timestamp: new Date().toISOString(), icon: "person", isCompleted: (c.officer_id || c.owner_id) ? true : false },
-      { id: "t4", stage: "Evidence Added", description: "Bank statements collected", timestamp: "", icon: "attach_file", isCompleted: false },
-      { id: "t5", stage: "Network Analysed", description: "Graph analysis completed", timestamp: "", icon: "hub", isCompleted: false },
-      { id: "t6", stage: "Closed", description: "Investigation concluded", timestamp: "", icon: "check_circle", isCompleted: false }
-    ],
+    currency: c.currency || "USD",
+    notes: (Array.isArray(c.case_notes) ? c.case_notes : Array.isArray(c.notes) ? c.notes : (c.notes ? [c.notes] : [])).map((n: any) => typeof n === 'string' ? { id: `n-${Date.now()}`, investigator: 'Analyst', timestamp: new Date().toISOString(), text: n } : n),
+    slaRemaining: c.slaRemaining || "48h 00m",
+    evidenceCount: (c.evidence || []).length,
+    currentStage: c.stage || (c.status === "NEW" ? "Alert Triage" : "Network Analysis"),
+    shapValues: c.shapValues || [],
+    triggeredRules: c.triggeredRules || [],
+    timeline: c.timeline || [],
     evidence: c.evidence || [],
-    linkedAlerts: c.linkedAlerts || [`ALT-${Math.floor(Math.random() * 9000) + 1000}`, `ALT-${Math.floor(Math.random() * 9000) + 1000}`],
-    linkedAccounts: c.linkedAccounts || [`ACCT-${Math.floor(Math.random() * 90000) + 10000}`],
-    investigatorNotes: c.investigatorNotes || "Initial triage suggests coordinated mule activity. Awaiting document verification."
+    linkedAlerts: c.alert_id ? [`ALT-${c.alert_id}`] : [],
+    linkedAccounts: [],
+    investigatorNotes: c.notes || "Initial triage suggests coordinated mule activity. Awaiting document verification."
   };
 }
 
-const mockCases: Case[] = [];
-
-export const useCaseStore = create<CaseState>((set) => ({
-  cases: mockCases,
+export const useCaseStore = create<CaseState>((set, get) => ({
+  cases: [],
+  activeCaseId: null,
   isLoading: false,
   error: null,
   presenceMap: {},
   connectedUsers: 0,
 
+  setActiveCaseId: (id: string | null) => {
+    set({ activeCaseId: id });
+  },
+
   createCase: async (customData?: any) => {
     try {
       const payload = {
         notes: customData?.description || "Manually registered case from dashboard.",
-        status: "NEW",
-        recommended_action: "PENDING_REVIEW"
+        status: customData?.status || "NEW",
+        recommended_action: "PENDING_REVIEW",
+        escalation_status: customData?.priority === "CRITICAL" || customData?.isEscalated ? "ESCALATED" : null,
+        escalated_by: null,
+        title: customData?.title,
+        customer_name: customData?.customerName,
+        customer_id: customData?.customerName,
+        priority: customData?.priority,
+        stage: "Escalated",
+        risk_score: customData?.riskScore,
+        ai_confidence: customData?.aiConfidence || 85
       };
       const response = await apiClient.post<any>("/api/v1/cases", payload);
       if (response?.data) {
         const newCase = mapBackendCase(response.data);
-        if (customData) {
-          if (customData.title) newCase.title = customData.title;
-          if (customData.description) newCase.description = customData.description;
-          if (customData.customerName) newCase.customerName = customData.customerName;
-          if (customData.priority) newCase.priority = customData.priority;
-          if (customData.riskScore) newCase.riskScore = customData.riskScore;
-        }
         set((state) => {
           const exists = state.cases.some((c) => c.id === newCase.id);
           if (exists) return state;
@@ -130,7 +124,6 @@ export const useCaseStore = create<CaseState>((set) => ({
       }
 
       const response = await apiClient.get<any>("/api/v1/cases");
-      // Backend wraps in ResponseEnvelope: { success, data: CaseResponse[] }
       const rawCases =
         response?.data && Array.isArray(response.data)
           ? response.data
@@ -179,7 +172,34 @@ export const useCaseStore = create<CaseState>((set) => ({
       await apiClient.patch(`/api/v1/cases/${id}/assign`, { officer_id: officerId });
     } catch (err: any) {
       console.error("Failed to assign case", err);
-      useCaseStore.getState().fetchCases();
+      get().fetchCases();
+    }
+  },
+
+  updateCaseMetadata: async (id, updates) => {
+    try {
+      // Optimistic UI update
+      set((state) => ({
+        cases: state.cases.map((c) => (c.id === id ? { ...c, ...updates } : c)),
+      }));
+
+      // Backend API call
+      const payload = {
+        title: updates.title,
+        customer_name: updates.customerName,
+        priority: updates.priority,
+        stage: updates.currentStage || updates.stage,
+        risk_score: updates.riskScore,
+        ai_confidence: updates.aiConfidence,
+        status: updates.status
+      };
+      
+      // Clean undefined
+      Object.keys(payload).forEach(key => (payload as any)[key] === undefined && delete (payload as any)[key]);
+      
+      await apiClient.patch(`/api/v1/cases/${id}`, payload);
+    } catch (err) {
+      console.warn(`Backend update metadata API failed for ${id}`);
     }
   },
 
@@ -229,7 +249,6 @@ export const useCaseStore = create<CaseState>((set) => ({
             cases: state.cases.map((c) => (c.id === caseId ? { ...c, ...updated } : c)),
           }));
         } else {
-          // Partial update without full data payload
           if (event.type === "case_closed") {
             set((state) => ({
               cases: state.cases.map((c) => (c.id === caseId ? { ...c, status: "CLOSED" as const } : c)),
@@ -237,6 +256,18 @@ export const useCaseStore = create<CaseState>((set) => ({
           } else if (event.type === "case_reopened") {
             set((state) => ({
               cases: state.cases.map((c) => (c.id === caseId ? { ...c, status: "INVESTIGATING" as const } : c)),
+            }));
+          } else if (event.type === "case_assigned") {
+            set((state) => ({
+              cases: state.cases.map((c) => (c.id === caseId ? { 
+                ...c, 
+                assignee_id: event.assigned_to,
+                assignedTo: event.assigned_to ? (cachedUsersMap[event.assigned_to] || `Investigator (${event.assigned_to.slice(0, 4)})`) : "Unassigned"
+              } : c)),
+            }));
+          } else if (event.type === "case_escalated") {
+            set((state) => ({
+              cases: state.cases.map((c) => (c.id === caseId ? { ...c, priority: "CRITICAL" as const, riskScore: 95 } : c)),
             }));
           }
         }

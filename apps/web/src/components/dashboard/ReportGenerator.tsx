@@ -28,6 +28,9 @@ export default function ReportGenerator({ accountId, caseId, className = "" }: R
   const [status, setStatus] = useState<"idle" | "generating" | "ready" | "error">("idle");
   const [report, setReport] = useState<GeneratedReport | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [editedSummary, setEditedSummary] = useState("");
+  const [officerNotes, setOfficerNotes] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const triggerGenerate = async () => {
     setStatus("generating");
@@ -40,6 +43,8 @@ export default function ReportGenerator({ accountId, caseId, className = "" }: R
 
       if (response.success && response.data.report_id) {
         setReport(response.data);
+        setEditedSummary(response.data.executive_summary);
+        setOfficerNotes("");
         setStatus("ready");
         addToast("Forensic Report draft compiled by Claude AI.", "success");
       } else {
@@ -54,13 +59,27 @@ export default function ReportGenerator({ accountId, caseId, className = "" }: R
     }
   };
 
-  const triggerDownload = (format: "pdf" | "docx") => {
+  const triggerSaveAndDownload = async (format: "pdf" | "docx") => {
     if (!report) return;
     try {
+      setIsSaving(true);
+      let updatedRecommendations = report.recommendations;
+      if (officerNotes.trim()) {
+        updatedRecommendations += `\n\n--- OFFICER NOTES & ADDITIONAL DETAILS ---\n${officerNotes.trim()}`;
+      }
+
+      const res = await apiClient.put<any>(`/api/v1/reports/${report.report_id}`, {
+        executive_summary: editedSummary,
+        recommendations: updatedRecommendations
+      });
+
+      if (!res?.success) throw new Error("Failed to save report edits");
+
+      setIsSaving(false);
+      
       const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const downloadUrl = `${BASE_URL}/api/v1/reports/${report.report_id}/download?format=${format}`;
       
-      // We trigger browser download using window.open or a temporary link
       const link = document.createElement("a");
       link.href = downloadUrl;
       link.target = "_blank";
@@ -71,7 +90,8 @@ export default function ReportGenerator({ accountId, caseId, className = "" }: R
       
       addToast(`Downloaded forensic statement draft as ${format.toUpperCase()}.`, "success");
     } catch (err: any) {
-      addToast("File download trigger failed.", "error");
+      setIsSaving(false);
+      addToast("Failed to save and download.", "error");
     }
   };
 
@@ -109,27 +129,45 @@ export default function ReportGenerator({ accountId, caseId, className = "" }: R
       {status === "ready" && report && (
         <div className="space-y-4 animate-fade-in">
           {/* Brief Preview Box */}
-          <div className="p-3 bg-surface-container-highest border border-outline-variant/20 rounded-xl text-left space-y-1.5 max-h-32 overflow-y-auto scrollbar-thin">
-            <span className="text-[8px] font-label-mono text-primary uppercase font-bold tracking-wider">Generated Executive Summary</span>
-            <p className="text-[10.5px] leading-relaxed text-on-surface-variant font-medium">
-              {report.executive_summary}
-            </p>
+          <div className="space-y-3">
+            <div className="p-3 bg-surface-container-highest border border-outline-variant/20 rounded-xl text-left space-y-1.5">
+              <span className="text-[8px] font-label-mono text-primary uppercase font-bold tracking-wider">Edit Executive Summary</span>
+              <textarea
+                value={editedSummary}
+                onChange={(e) => setEditedSummary(e.target.value)}
+                className="w-full bg-transparent border border-outline-variant/30 rounded-md p-2 text-[10.5px] leading-relaxed text-on-surface-variant font-medium resize-none focus:outline-none focus:border-primary/50"
+                rows={4}
+              />
+            </div>
+            
+            <div className="p-3 bg-surface-container-highest border border-outline-variant/20 rounded-xl text-left space-y-1.5">
+              <span className="text-[8px] font-label-mono text-primary uppercase font-bold tracking-wider">Additional Officer Notes</span>
+              <textarea
+                value={officerNotes}
+                onChange={(e) => setOfficerNotes(e.target.value)}
+                placeholder="Add incident summary, officer observations, or custom findings here..."
+                className="w-full bg-transparent border border-outline-variant/30 rounded-md p-2 text-[10.5px] leading-relaxed text-on-surface-variant font-medium resize-none focus:outline-none focus:border-primary/50"
+                rows={3}
+              />
+            </div>
           </div>
 
           <div className="flex gap-2">
             <button
-              onClick={() => triggerDownload("pdf")}
-              className="flex-1 px-4 py-2.5 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 text-on-surface text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+              onClick={() => triggerSaveAndDownload("pdf")}
+              disabled={isSaving}
+              className="flex-1 px-4 py-2.5 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/30 text-on-surface text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <Download size={14} />
-              Download PDF
+              {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              Save & PDF
             </button>
             <button
-              onClick={() => triggerDownload("docx")}
-              className="flex-1 px-4 py-2.5 bg-primary/20 hover:bg-primary/30 border border-primary/30 text-primary text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2"
+              onClick={() => triggerSaveAndDownload("docx")}
+              disabled={isSaving}
+              className="flex-1 px-4 py-2.5 bg-primary/20 hover:bg-primary/30 border border-primary/30 text-primary text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <FileText size={14} />
-              Download DOCX
+              {isSaving ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+              Save & DOCX
             </button>
           </div>
 

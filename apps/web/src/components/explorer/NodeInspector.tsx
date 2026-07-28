@@ -314,7 +314,8 @@ export default function NodeInspector() {
               description: `Suspicious activity detected on node ${selectedNode.id} with risk score ${selectedNode.riskScore}.`,
               customerName: selectedNode.id,
               priority: selectedNode.riskScore >= 75 ? "CRITICAL" : selectedNode.riskScore >= 30 ? "HIGH" : "MEDIUM",
-              riskScore: selectedNode.riskScore
+              riskScore: selectedNode.riskScore,
+              isEscalated: true
             });
             window.location.href = "/cases";
           }}

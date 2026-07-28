@@ -37,6 +37,7 @@ export interface Case {
   transactionsCount: number;
   totalAmount: number;
   notes: CaseNote[];
+  currency: string;
   
   // Extended fields for Investigation Workspace
   customerName?: string;
@@ -113,4 +114,3 @@ export type InvestigationEvent =
   | CaseUpdatedPayload
   | CaseNoteAddedPayload
   | PongPayload;
-

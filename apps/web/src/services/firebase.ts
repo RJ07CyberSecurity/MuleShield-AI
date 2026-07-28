@@ -41,6 +41,9 @@ export async function signInWithGoogle() {
     if (error?.code === "auth/popup-closed-by-user") {
       throw new Error("Sign-in popup was closed before completion.");
     }
+    if (error?.code === "auth/popup-blocked") {
+      throw new Error("Your browser blocked the sign-in popup. Please allow popups for this site and try again.");
+    }
     console.error("Google login failed", error);
     throw error;
   }
@@ -58,6 +61,9 @@ export async function signInWithGithub() {
   } catch (error: any) {
     if (error?.code === "auth/popup-closed-by-user") {
       throw new Error("Sign-in popup was closed before completion.");
+    }
+    if (error?.code === "auth/popup-blocked") {
+      throw new Error("Your browser blocked the sign-in popup. Please allow popups for this site and try again.");
     }
     console.error("GitHub login failed", error);
     throw error;

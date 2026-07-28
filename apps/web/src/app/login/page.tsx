@@ -114,12 +114,10 @@ export default function LoginPage() {
   // ── Firebase SSO ──
   const handleFirebaseSSO = async (ssoType: "google" | "github") => {
     setError(null);
-    setIsLoading(true);
     try {
-      const { idToken } =
-        ssoType === "google"
-          ? await signInWithGoogle()
-          : await signInWithGithub();
+      const authPromise = ssoType === "google" ? signInWithGoogle() : signInWithGithub();
+      setIsLoading(true);
+      const { idToken } = await authPromise;
       const response = await apiClient.post<any>("/api/v1/auth/firebase-login", {
         id_token: idToken,
       });

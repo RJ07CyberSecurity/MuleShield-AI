@@ -2,19 +2,22 @@ import asyncio
 import json
 import uuid
 from datetime import datetime
-
-from fastapi import APIRouter, Depends, Request, status, HTTPException
+import os
+import shutil
+from fastapi import APIRouter, Depends, Request, status, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
-from app.models.case import Case, CaseNote, CaseTimeline
+from app.models.case import Case, CaseNote, CaseTimeline, EvidenceFile
 from app.schemas.case import (
     CaseResponse,
     CaseStatusUpdateRequest,
     CaseNoteCreateRequest,
     CaseCreateRequest,
+    CaseUpdateRequest,
 )
 from app.dependencies.auth import get_token_claims
 from shared.database import get_db_session, Account, AuditLog
@@ -34,6 +37,21 @@ def _build_case_response(case) -> CaseResponse:
     # Case has no direct customer_id column — traverse Case → Alert → customer_id
     if case.alert and case.alert.customer_id:
         resp.customer_id = case.alert.customer_id
+        
+    # Map evidence to response
+    evidence_list = []
+    if hasattr(case, 'evidence') and case.evidence:
+        for ev in case.evidence:
+            evidence_list.append({
+                "id": str(ev.id),
+                "filename": ev.file_name,
+                "type": ev.content_type,
+                "size": ev.file_size,
+                "uploadedBy": str(ev.uploaded_by),
+                "uploadDate": ev.uploaded_at.isoformat()
+            })
+    resp.evidence = evidence_list
+    
     return resp
 
 
@@ -74,6 +92,20 @@ async def create_case(
     Broadcasts a case_created event to all connected WebSocket clients.
     """
     owner_id = request.headers.get("x-user-id")
+    
+    # Prevent duplicate escalation if alert_id is provided
+    if payload.alert_id:
+        existing = await session.execute(
+            select(Case).where(Case.alert_id == payload.alert_id)
+        )
+        existing_case = existing.scalars().first()
+        if existing_case:
+            return ResponseEnvelope(
+                success=True,
+                message="Investigation already exists for this alert.",
+                data=_build_case_response(existing_case),
+                request_id=request.state.request_id,
+            )
 
     new_case = Case(
         id=uuid.uuid4(),
@@ -81,6 +113,16 @@ async def create_case(
         status=payload.status,
         notes=payload.notes or "Manually registered case.",
         recommended_action=payload.recommended_action or "PENDING_REVIEW",
+        escalation_status=payload.escalation_status,
+        escalated_by=payload.escalated_by or (owner_id if payload.escalation_status else None),
+        alert_id=payload.alert_id,
+        title=payload.title,
+        customer_name=payload.customer_name,
+        customer_id=payload.customer_id,
+        priority=payload.priority,
+        stage=payload.stage,
+        risk_score=payload.risk_score,
+        ai_confidence=payload.ai_confidence
     )
     session.add(new_case)
     await session.commit()
@@ -90,7 +132,7 @@ async def create_case(
     result = await session.execute(
         select(Case)
         .where(Case.id == new_case.id)
-        .options(selectinload(Case.alert), selectinload(Case.case_notes), selectinload(Case.timeline))
+        .options(selectinload(Case.alert), selectinload(Case.case_notes), selectinload(Case.timeline), selectinload(Case.evidence))
     )
     new_case = result.scalars().first()
 
@@ -143,6 +185,7 @@ async def list_cases(
             selectinload(Case.alert),
             selectinload(Case.case_notes),
             selectinload(Case.timeline),
+            selectinload(Case.evidence)
         )
         .order_by(Case.created_at.desc())
     )
@@ -207,6 +250,7 @@ async def get_case(
                 selectinload(Case.alert),
                 selectinload(Case.case_notes),
                 selectinload(Case.timeline),
+                selectinload(Case.evidence)
             )
         )
         case = result.scalars().first()
@@ -694,6 +738,214 @@ async def escalate_case(
     return ResponseEnvelope(
         success=True,
         message="Case escalated successfully.",
+        data=case_data,
+        request_id=request.state.request_id,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /cases/{id}/evidence — Upload evidence
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/cases/{id}/evidence", response_model=ResponseEnvelope[CaseResponse])
+async def upload_case_evidence(
+    request: Request,
+    id: str,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_db_session),
+    claims: dict = Depends(get_token_claims),
+):
+    """
+    Uploads a file and attaches it as evidence to a case.
+    """
+    case = await session.get(Case, uuid.UUID(id))
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    user_id_str = claims.get("sub")
+    user_uuid = uuid.UUID(user_id_str) if user_id_str else uuid.uuid4()
+
+    upload_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))), "uploads", "evidence")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    file_uuid = uuid.uuid4()
+    file_ext = os.path.splitext(file.filename)[1]
+    safe_filename = f"{file_uuid}{file_ext}"
+    file_path = os.path.join(upload_dir, safe_filename)
+
+    file_size = 0
+    with open(file_path, "wb") as buffer:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            buffer.write(chunk)
+            file_size += len(chunk)
+
+    evidence = EvidenceFile(
+        id=file_uuid,
+        case_id=case.id,
+        file_name=file.filename,
+        file_path=file_path,
+        file_size=file_size,
+        content_type=file.content_type or "application/octet-stream",
+        uploaded_by=user_uuid,
+        uploaded_at=datetime.utcnow()
+    )
+    session.add(evidence)
+
+    timeline_entry = CaseTimeline(
+        case_id=case.id,
+        event_type="EVIDENCE_UPLOADED",
+        description=f"Evidence file '{file.filename}' uploaded.",
+        created_by=user_uuid,
+    )
+    session.add(timeline_entry)
+    await _write_audit(session, user_uuid, "EVIDENCE_UPLOAD", case.id,
+                       after={"file_name": file.filename, "file_id": str(file_uuid)})
+    await session.commit()
+    await session.refresh(case)
+
+    # Re-fetch to ensure relationships are loaded
+    result = await session.execute(
+        select(Case)
+        .where(Case.id == case.id)
+        .options(
+            selectinload(Case.alert),
+            selectinload(Case.case_notes),
+            selectinload(Case.timeline),
+            selectinload(Case.evidence)
+        )
+    )
+    case = result.scalars().first()
+    
+    case_data = _build_case_response(case)
+
+    asyncio.create_task(manager.broadcast({
+        "type": "case_updated",
+        "case_id": str(case.id),
+        "data": case_data.model_dump(mode="json"),
+    }))
+
+    return ResponseEnvelope(
+        success=True,
+        message="Evidence uploaded successfully.",
+        data=case_data,
+        request_id=request.state.request_id,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /cases/{id}/evidence/{evidence_id}/download — Download evidence
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/cases/{id}/evidence/{evidence_id}/download")
+async def download_case_evidence(
+    id: str,
+    evidence_id: str,
+    session: AsyncSession = Depends(get_db_session),
+    claims: dict = Depends(get_token_claims),
+):
+    """
+    Downloads a previously uploaded evidence file.
+    """
+    evidence = await session.get(EvidenceFile, uuid.UUID(evidence_id))
+    if not evidence or str(evidence.case_id) != id:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    if not os.path.exists(evidence.file_path):
+        raise HTTPException(status_code=404, detail="File not found on server")
+
+    return FileResponse(
+        path=evidence.file_path,
+        filename=evidence.file_name,
+        media_type=evidence.content_type
+    )
+
+@router.patch("/cases/{id}", response_model=ResponseEnvelope[CaseResponse])
+async def update_case(
+    request: Request,
+    id: str,
+    payload: CaseUpdateRequest,
+    session: AsyncSession = Depends(get_db_session),
+    claims: dict = Depends(get_token_claims),
+) -> ResponseEnvelope[CaseResponse]:
+    """
+    Updates metadata on a compliance case and broadcasts the change.
+    """
+    from shared.database.models import Account, Alert
+
+    try:
+        case_uuid = uuid.UUID(id)
+        result = await session.execute(
+            select(Case).where(Case.id == case_uuid).options(
+                selectinload(Case.alert),
+                selectinload(Case.case_notes),
+                selectinload(Case.timeline),
+                selectinload(Case.evidence)
+            )
+        )
+        case = result.scalars().first()
+    except ValueError:
+        return ResponseEnvelope(success=False, message="Invalid Case ID.")
+
+    if not case:
+        return ResponseEnvelope(success=False, message="Case not found.")
+
+    updated_fields = {}
+    if payload.status is not None:
+        updated_fields['status'] = payload.status
+        case.status = payload.status
+    if payload.priority is not None:
+        updated_fields['priority'] = payload.priority
+        case.priority = payload.priority
+    if payload.stage is not None:
+        updated_fields['stage'] = payload.stage
+        case.stage = payload.stage
+    if payload.risk_score is not None:
+        updated_fields['risk_score'] = payload.risk_score
+        case.risk_score = payload.risk_score
+    if payload.ai_confidence is not None:
+        updated_fields['ai_confidence'] = payload.ai_confidence
+        case.ai_confidence = payload.ai_confidence
+    if payload.title is not None:
+        updated_fields['title'] = payload.title
+        case.title = payload.title
+    if payload.customer_name is not None:
+        updated_fields['customer_name'] = payload.customer_name
+        case.customer_name = payload.customer_name
+
+    await session.commit()
+    await session.refresh(case)
+
+    # Re-fetch with relations to ensure complete payload
+    result = await session.execute(
+        select(Case)
+        .where(Case.id == case.id)
+        .options(
+            selectinload(Case.alert),
+            selectinload(Case.case_notes),
+            selectinload(Case.timeline),
+            selectinload(Case.evidence)
+        )
+    )
+    case = result.scalars().first()
+
+    user_id_str = claims.get("sub")
+    user_uuid = uuid.UUID(user_id_str) if user_id_str else uuid.uuid4()
+    await _write_audit(session, user_uuid, "CASE_UPDATE", case.id, after=updated_fields)
+    await session.commit()
+
+    case_data = _build_case_response(case)
+
+    asyncio.create_task(manager.broadcast({
+        "type": "case_updated",
+        "data": case_data.model_dump(mode="json"),
+    }))
+
+    return ResponseEnvelope(
+        success=True,
+        message="Case successfully updated.",
         data=case_data,
         request_id=request.state.request_id,
     )
