@@ -1,3 +1,5 @@
+import uuid
+from typing import Any
 from fastapi import APIRouter, Depends, Request, status
 from app.models.auth import User
 from app.schemas.auth import (
@@ -15,8 +17,9 @@ from app.schemas.auth import (
     ForgotPasswordLinkRequest,
     PasswordResetVerifyRequest,
     UserUpdateRequest,
+    AuditLogResponse,
 )
-from app.dependencies.auth import get_auth_service, get_current_user, oauth2_scheme
+from app.dependencies.auth import get_auth_service, get_current_user, oauth2_scheme, RoleChecker
 from app.services.auth_service import AuthService
 from shared.schemas import ResponseEnvelope
 from shared.exceptions import AuthenticationException
@@ -64,9 +67,14 @@ async def login(
     Authenticates username and password credentials. 
     If MFA is active, returns is_mfa_required=True and empty tokens.
     """
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
     auth_result = await service.authenticate_credentials(
         email=payload.email,
-        password_raw=payload.password
+        password_raw=payload.password,
+        client_ip=client_ip,
+        user_agent=user_agent
     )
     # We commit in case password verify tracking writes audit records in future sprints
     await service.repository.session.commit()
@@ -134,9 +142,17 @@ async def login_mfa_verify(
     """
     Verifies the TOTP code for active MFA users during login challenge.
     """
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
     auth_result = await service.login_mfa_verify(
         email=payload.email,
-        code=payload.code
+        code=payload.code,
+        phone_code=payload.phone_code,
+        firebase_phone_token=payload.firebase_phone_token,
+        phone_session_id=payload.phone_session_id,
+        client_ip=client_ip,
+        user_agent=user_agent
     )
     await service.repository.session.commit()
     
@@ -178,7 +194,14 @@ async def firebase_login(
     Authenticates a user via Firebase SSO token (Google or GitHub).
     Creates a new user profile on the fly if one does not exist.
     """
-    auth_result = await service.authenticate_firebase_token(payload.id_token)
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    auth_result = await service.authenticate_firebase_token(
+        payload.id_token,
+        client_ip=client_ip,
+        user_agent=user_agent
+    )
     await service.repository.session.commit()
     
     return ResponseEnvelope(
@@ -216,10 +239,15 @@ async def verify_phone_otp(
     """
     Verifies a backend-issued phone OTP and returns application JWT tokens.
     """
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
     auth_result = await service.verify_phone_otp(
         phone_number=payload.phone_number,
         session_id=payload.session_id,
         code=payload.code,
+        client_ip=client_ip,
+        user_agent=user_agent
     )
     await service.repository.session.commit()
     return ResponseEnvelope(
@@ -300,6 +328,41 @@ async def get_me(
         request_id=request.state.request_id
     )
 
+@router.patch("/users/{user_id}/role", response_model=ResponseEnvelope[dict])
+async def update_user_role_admin(
+    user_id: uuid.UUID,
+    request: Request,
+    payload: dict,
+    service: AuthService = Depends(get_auth_service)
+) -> ResponseEnvelope[dict]:
+    """
+    Updates a user's role (admin operation).
+    """
+    from shared.exceptions import NotFoundException
+    user = await service.repository.get_user_by_id(user_id)
+    if not user:
+        raise NotFoundException("User not found")
+        
+    role_name = payload.get("role")
+    if role_name:
+        role = await service.repository.get_role_by_name(role_name.lower())
+        if role:
+            user.roles = [role]
+        else:
+            user.roles = []
+    else:
+        user.roles = []
+        
+    await service.repository.update_user(user)
+    await service.repository.session.commit()
+    
+    return ResponseEnvelope(
+        success=True,
+        message="Role updated successfully.",
+        data={},
+        request_id=request.state.request_id
+    )
+
 @router.patch("/me", response_model=ResponseEnvelope[UserResponse])
 async def update_me(
     request: Request,
@@ -368,5 +431,38 @@ async def reset_password(
         success=True,
         message="Password successfully reset. You may now log in.",
         data={},
+        request_id=request.state.request_id
+    )
+
+@router.get("/audit-logs", response_model=ResponseEnvelope[list[AuditLogResponse]])
+async def get_audit_logs(
+    request: Request,
+    service: AuthService = Depends(get_auth_service),
+    _ = Depends(RoleChecker(["administrator"]))
+) -> ResponseEnvelope[list[AuditLogResponse]]:
+    """
+    Returns audit logs for login/logout events. Only accessible by administrators.
+    """
+    logs = await service.repository.list_audit_logs()
+    
+    # Map user email to response if needed, but the schema allows mapping
+    response_data = []
+    for log in logs:
+        log_dict = {
+            "id": log.id,
+            "user_id": log.user_id,
+            "login_time": log.login_time,
+            "logout_time": log.logout_time,
+            "duration_seconds": log.duration_seconds,
+            "date_logged": log.date_logged,
+            "access_details": log.access_details,
+            "user_email": log.user.email if log.user else None
+        }
+        response_data.append(AuditLogResponse(**log_dict))
+        
+    return ResponseEnvelope(
+        success=True,
+        message="Audit logs retrieved successfully",
+        data=response_data,
         request_id=request.state.request_id
     )

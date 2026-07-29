@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 from pydantic import BaseModel, Field
 
 class CaseResponse(BaseModel):
@@ -15,7 +16,7 @@ class CaseResponse(BaseModel):
     escalation_status: str | None = None
     escalated_by: str | None = None
     escalated_to: str | None = None
-    evidence: list[dict] = []
+    evidence: list[Any] = []
 
     # New persistent fields
     title: str | None = None

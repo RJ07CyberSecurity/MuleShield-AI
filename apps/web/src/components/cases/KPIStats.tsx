@@ -1,4 +1,5 @@
 "use client";
+import { CURRENCY_SYMBOL } from "@/utils/currency";
 
 import { useMemo } from "react";
 import { Case } from "../../types/cases";
@@ -51,16 +52,16 @@ export default function KPIStats({ cases }: KPIStatsProps) {
       },
       { 
         label: "Funds Under Investigation", 
-        value: `$${(funds / 1000000).toFixed(2)}M`, 
-        trend: "+$1.2M", 
+        value: `${CURRENCY_SYMBOL}${(funds / 1000000).toFixed(2)}M`, 
+        trend: `+${CURRENCY_SYMBOL}${CURRENCY_SYMBOL}1.2M`, 
         trendUp: true,
         icon: <DollarSign size={20} className="text-risk-high" />,
         color: "border-risk-high/30"
       },
       { 
         label: "Recovered Funds", 
-        value: "$8.4M", 
-        trend: "+$400K", 
+        value: `${CURRENCY_SYMBOL}${CURRENCY_SYMBOL}8.4M`, 
+        trend: `+${CURRENCY_SYMBOL}${CURRENCY_SYMBOL}400K`, 
         trendUp: true,
         icon: <ShieldCheck size={20} className="text-risk-low" />,
         color: "border-risk-low/30"

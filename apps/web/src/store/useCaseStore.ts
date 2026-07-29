@@ -40,13 +40,13 @@ function mapBackendCase(c: any): Case {
         ? "CLOSED"
         : "NEW",
     priority: c.priority || (c.escalation_status === "ESCALATED" ? "CRITICAL" : "MEDIUM"),
-    stage: c.stage || "Alert Triage",
+
     customerName: c.customer_name || c.customer_id || "Unknown Customer",
     riskScore: c.risk_score || c.riskScore || 75,
     aiConfidence: c.ai_confidence || c.aiConfidence || 85,
     assignee_id: c.officer_id || c.owner_id,
     assignedTo: (c.officer_id || c.owner_id) ? (cachedUsersMap[c.officer_id || c.owner_id] || `Investigator (${String(c.officer_id || c.owner_id).slice(0, 4)})`) : "Unassigned",
-    createdDate: c.created_at ? new Date(c.created_at).toLocaleDateString() : new Date().toLocaleDateString(),
+
     createdAt: c.created_at,
     description: c.notes || c.description || "No description available.",
     muleNodes: c.customer_id ? [`CUST-${String(c.customer_id).slice(0, 8).toUpperCase()}`] : [],
@@ -188,7 +188,7 @@ export const useCaseStore = create<CaseState>((set, get) => ({
         title: updates.title,
         customer_name: updates.customerName,
         priority: updates.priority,
-        stage: updates.currentStage || updates.stage,
+        stage: updates.currentStage || (updates as any).stage,
         risk_score: updates.riskScore,
         ai_confidence: updates.aiConfidence,
         status: updates.status

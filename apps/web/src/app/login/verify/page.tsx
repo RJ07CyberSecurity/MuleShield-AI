@@ -21,7 +21,17 @@ export default function VerifyPage() {
     }
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      setEmail(params.get("email") || "");
+      const rawEmail = params.get("email") || "";
+      try {
+        let b64 = rawEmail.replace(/-/g, "+").replace(/_/g, "/");
+        while (b64.length % 4 !== 0) {
+          b64 += "=";
+        }
+        const decoded = atob(b64);
+        setEmail(decoded.includes("@") ? decoded : rawEmail);
+      } catch {
+        setEmail(rawEmail);
+      }
     }
   }, []);
 

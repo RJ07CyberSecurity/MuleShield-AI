@@ -2,7 +2,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.auth import User, Role, Permission
+from app.models.auth import User, Role, Permission, AuditLog
+from datetime import datetime, timezone
 
 class AuthRepository:
     """
@@ -107,5 +108,46 @@ class AuthRepository:
         """
         result = await self.session.execute(
             select(Role).options(selectinload(Role.permissions))
+        )
+        return list(result.scalars().all())
+
+    async def create_audit_log(self, audit_log: AuditLog) -> AuditLog:
+        """
+        Saves a new AuditLog record for a login event.
+        """
+        self.session.add(audit_log)
+        await self.session.flush()
+        return audit_log
+
+    async def update_logout_time(self, user_id: uuid.UUID) -> AuditLog | None:
+        """
+        Finds the most recent AuditLog for a user without a logout_time, and sets it to now.
+        Returns the updated log, or None if no open session is found.
+        """
+        result = await self.session.execute(
+            select(AuditLog)
+            .where(AuditLog.user_id == user_id, AuditLog.logout_time.is_(None))
+            .order_by(AuditLog.login_time.desc())
+            .limit(1)
+        )
+        audit_log = result.scalars().first()
+        
+        if audit_log:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            audit_log.logout_time = now
+            delta = now - audit_log.login_time
+            audit_log.duration_seconds = int(delta.total_seconds())
+            await self.session.flush()
+            
+        return audit_log
+
+    async def list_audit_logs(self) -> list[AuditLog]:
+        """
+        Returns all audit logs, ordered by newest first.
+        """
+        result = await self.session.execute(
+            select(AuditLog)
+            .options(selectinload(AuditLog.user))
+            .order_by(AuditLog.login_time.desc())
         )
         return list(result.scalars().all())

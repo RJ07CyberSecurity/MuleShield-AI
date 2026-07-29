@@ -71,6 +71,7 @@ class TokenResponse(BaseModel):
     refresh_token: str = Field(..., description="JWT refresh token")
     token_type: str = Field(default="Bearer")
     is_mfa_required: bool = Field(default=False, description="True if login requires TOTP verification step")
+    requires_phone_otp: bool = Field(default=False, description="True if login requires both Email and Phone OTP (Admin requirement)")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -88,6 +89,9 @@ class MFAVerifyRequest(BaseModel):
     """Schema to verify TOTP code."""
     email: str = Field(..., pattern=r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
     code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$", description="6-digit TOTP code")
+    phone_code: str | None = Field(None, min_length=6, max_length=6, pattern=r"^\d{6}$", description="6-digit Phone OTP code")
+    firebase_phone_token: str | None = Field(None, description="Firebase ID Token representing verified phone")
+    phone_session_id: str | None = Field(None, description="Backend phone session ID for dev fallback")
 
 
 class FirebaseLoginRequest(BaseModel):
@@ -127,3 +131,19 @@ class PhoneOtpVerifyRequest(BaseModel):
     phone_number: str = Field(..., pattern=r"^\+[1-9]\d{7,14}$")
     session_id: str = Field(..., min_length=8)
     code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+class AuditLogResponse(BaseModel):
+    """Schema for returning audit logs."""
+    id: uuid.UUID
+    user_id: uuid.UUID
+    login_time: datetime
+    logout_time: datetime | None = None
+    duration_seconds: int | None = None
+    date_logged: datetime
+    access_details: str | None = None
+    
+    # We can also include user email for display
+    user_email: str | None = None
+
+    class Config:
+        from_attributes = True

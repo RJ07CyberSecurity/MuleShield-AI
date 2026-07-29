@@ -5,10 +5,44 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiClient } from "../../services/api-client";
 
+function decodeEmailParam(param: string | null): string {
+  if (!param) return "";
+  const raw = param.trim();
+  if (!raw) return "";
+
+  // If already contains '@', return decoded URI string directly
+  if (raw.includes("@")) {
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+
+  // Attempt Base64 URL decoding
+  try {
+    let b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4 !== 0) {
+      b64 += "=";
+    }
+    const decoded = atob(b64);
+    if (decoded.includes("@")) {
+      return decoded;
+    }
+  } catch {}
+
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const email = searchParams.get("email") || "";
+  const rawEmail = searchParams.get("email") || "";
+  const email = decodeEmailParam(rawEmail);
   const token = searchParams.get("token") || "";
   
   const [newPassword, setNewPassword] = useState("");
@@ -224,25 +258,25 @@ function ResetPasswordContent() {
             <div className="p-4 rounded-xl border border-outline-variant/20 bg-[#0c0e17] space-y-2">
               <div className="flex items-center gap-3 text-caption">
                 <span className={`material-symbols-outlined text-base ${hasLowercase ? "text-risk-low" : "text-on-surface-variant/40"}`}>
-                  {hasLowercase ? "check_circle" : "radio_button_unchecked"}
+                  {hasLowercase ? "check_box" : "check_box_outline_blank"}
                 </span>
                 <span className={hasLowercase ? "text-on-surface" : "text-on-surface-variant"}>At least one lowercase letter</span>
               </div>
               <div className="flex items-center gap-3 text-caption">
                 <span className={`material-symbols-outlined text-base ${hasUppercase ? "text-risk-low" : "text-on-surface-variant/40"}`}>
-                  {hasUppercase ? "check_circle" : "radio_button_unchecked"}
+                  {hasUppercase ? "check_box" : "check_box_outline_blank"}
                 </span>
                 <span className={hasUppercase ? "text-on-surface" : "text-on-surface-variant"}>At least one uppercase letter</span>
               </div>
               <div className="flex items-center gap-3 text-caption">
                 <span className={`material-symbols-outlined text-base ${hasNumber ? "text-risk-low" : "text-on-surface-variant/40"}`}>
-                  {hasNumber ? "check_circle" : "radio_button_unchecked"}
+                  {hasNumber ? "check_box" : "check_box_outline_blank"}
                 </span>
                 <span className={hasNumber ? "text-on-surface" : "text-on-surface-variant"}>At least one number</span>
               </div>
               <div className="flex items-center gap-3 text-caption">
                 <span className={`material-symbols-outlined text-base ${hasSpecial ? "text-risk-low" : "text-on-surface-variant/40"}`}>
-                  {hasSpecial ? "check_circle" : "radio_button_unchecked"}
+                  {hasSpecial ? "check_box" : "check_box_outline_blank"}
                 </span>
                 <span className={hasSpecial ? "text-on-surface" : "text-on-surface-variant"}>At least one special character</span>
               </div>

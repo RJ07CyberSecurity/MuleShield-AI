@@ -1,5 +1,5 @@
 import { ConfirmationResult, RecaptchaVerifier } from "firebase/auth";
-import { createRecaptchaVerifier, sendOtpToPhone } from "./firebase";
+import { createRecaptchaVerifier, sendOtpToPhone, clearRecaptchaVerifier } from "./firebase";
 import { apiClient } from "./api-client";
 
 export type PhoneOtpSession =
@@ -17,7 +17,8 @@ function isFirebasePhoneAuthDisabled(error: unknown): boolean {
 
   return (
     code === "auth/operation-not-allowed" ||
-    code === "auth/invalid-app-credential"
+    code === "auth/invalid-app-credential" ||
+    code === "auth/billing-not-enabled"
   );
 }
 
@@ -26,8 +27,8 @@ async function sendOtpViaBackend(phoneNumber: string): Promise<PhoneOtpSession> 
     phone_number: phoneNumber,
   });
 
-  if (!response?.success || !response?.data?.session_id) {
-    throw new Error(response?.message || "Failed to send verification code.");
+  if (!response?.success) {
+    throw new Error(response?.message || "Failed to trigger phone OTP.");
   }
 
   return {
@@ -39,7 +40,7 @@ async function sendOtpViaBackend(phoneNumber: string): Promise<PhoneOtpSession> 
 }
 
 export async function sendPhoneOtp(phoneNumber: string): Promise<PhoneOtpSession> {
-  const normalized = phoneNumber.trim();
+  const normalized = phoneNumber.startsWith("+") ? phoneNumber : `+${phoneNumber}`;
 
   try {
     const verifier = createRecaptchaVerifier("recaptcha-container");
@@ -50,10 +51,7 @@ export async function sendPhoneOtp(phoneNumber: string): Promise<PhoneOtpSession
       throw error;
     }
 
-    console.warn(
-      "Firebase Phone Auth unavailable — using backend OTP fallback.",
-      error
-    );
+    console.warn("Firebase Phone Auth unavailable — using backend OTP fallback.");
     return sendOtpViaBackend(normalized);
   }
 }

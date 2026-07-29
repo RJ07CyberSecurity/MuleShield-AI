@@ -1,4 +1,5 @@
 "use client";
+import { CURRENCY_SYMBOL } from "@/utils/currency";
 
 import React, { useMemo } from "react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
@@ -37,14 +38,14 @@ export default function LiveMetricsCards() {
     },
     {
       label: "Money Protected Today",
-      value: "$4.2M",
-      trend: "+$800k",
+      value: `${CURRENCY_SYMBOL}4.2M`,
+      trend: `+${CURRENCY_SYMBOL}800k`,
       change: "vs yesterday",
       isPositive: true,
       color: "text-risk-low",
       sparklineColor: "#10B981", // green
       data: generateSparklineData(20, 1000, 5000),
-      extraInfo: "Est. Fraud Prevented: $1.1M",
+      extraInfo: `Est. Fraud Prevented: ${CURRENCY_SYMBOL}1.1M`,
     },
     {
       label: "AI Confidence Avg",

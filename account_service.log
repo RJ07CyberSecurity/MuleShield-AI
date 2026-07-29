@@ -1,0 +1,9 @@
+2026-07-29 23:37:50 [warning  ] Firebase: no explicit credentials found — attempting Application Default Credentials
+2026-07-29 23:37:53 [warning  ] Firebase Admin SDK initialization failed — running in offline mock mode error=Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for more information.
+Started server process [35852]
+Waiting for application startup.
+[2m2026-07-29T18:07:53.221220Z[0m [[32m[1minfo     [0m] [1mInitializing PostgreSQL connection pool on startup...[0m [36mservice[0m=[35maccount-service[0m
+[2m2026-07-29T18:07:53.221365Z[0m [[32m[1minfo     [0m] [1mInitializing async SQLite database engine[0m [36mpath[0m=[35msqlite+aiosqlite:///E:/MuleShieldAI/muleshield.db[0m [36mservice[0m=[35maccount-service[0m
+[2m2026-07-29T18:07:53.246668Z[0m [[32m[1minfo     [0m] [1mSQLite database tables verified and created[0m [36mservice[0m=[35maccount-service[0m
+Application startup complete.
+Uvicorn running on http://127.0.0.1:8003 (Press CTRL+C to quit)

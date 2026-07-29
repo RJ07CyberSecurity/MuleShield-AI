@@ -249,9 +249,12 @@ async def get_graph(
         if "mule" in acct.account_number or risk_score >= 90:
             category = "Critical Mule Node"
 
+        currency_map = {"USD": "$", "EUR": "€", "GBP": "£", "INR": "₹", "JPY": "¥"}
+        acct_sym = currency_map.get(getattr(acct, "currency", "USD"), "$")
+
         details = {
             "name": name,
-            "balance": f"${float(acct.balance):,.2f}",
+            "balance": f"{acct_sym}{float(acct.balance):,.2f}",
             "category": category,
             "created": acct.created_at.strftime("%Y-%m-%d") if getattr(acct, "created_at", None) else "2026-01-01",
             "location": "New York, USA" if risk_score >= 70 else "Boston, USA"
@@ -310,11 +313,13 @@ async def get_graph(
 
         edge_key = (source_id, target_id)
         if edge_key not in added_edges:
+            currency_map = {"USD": "$", "EUR": "€", "GBP": "£", "INR": "₹", "JPY": "¥"}
+            tx_sym = currency_map.get(getattr(tx, "currency", "USD"), "$")
             edges.append(GraphEdge(
                 id=f"e-{tx.id or idx}",
                 source=source_id,
                 target=target_id,
-                label=f"${float(tx.amount):,.2f}",
+                label=f"{tx_sym}{float(tx.amount):,.2f}",
                 value=float(tx.amount),
                 details={
                     "transactionId": f"TXN-{tx.id or idx}",

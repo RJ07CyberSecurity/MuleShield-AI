@@ -239,7 +239,7 @@ export default function SubjectProfilePage({ params }: PageProps) {
               <span className="text-on-surface-variant font-medium">Annual Income</span>
               <span className="text-primary font-bold font-label-mono text-xs">
                 {profile?.annual_income
-                  ? (piiRevealed ? formatCurrency(profile.annual_income, activeCase?.currency || "USD") : `•••••• ${activeCase?.currency || "USD"}`)
+                  ? (piiRevealed ? formatCurrency(profile.annual_income, "USD") : `•••••• USD`)
                   : "—"}
               </span>
             </div>

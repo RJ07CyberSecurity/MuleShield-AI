@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 from redis.asyncio import Redis
-from app.models.auth import User
+from app.models.auth import User, AuditLog
 from app.repository.auth_repository import AuthRepository
 from shared.authentication import (
     PasswordHasher,
@@ -145,7 +145,7 @@ class AuthService:
                 
         return await self.repository.update_user(user)
 
-    async def authenticate_credentials(self, email: str, password_raw: str) -> dict[str, Any]:
+    async def authenticate_credentials(self, email: str, password_raw: str, client_ip: str = None, user_agent: str = None) -> dict[str, Any]:
         """
         Validates username and password. Checks if MFA is required.
         """
@@ -158,8 +158,10 @@ class AuthService:
             logger.warning("Login blocked: account disabled", email=email)
             raise AuthenticationException("User account is disabled.")
 
+        is_admin = any(r.name in ["admin", "administrator"] for r in user.roles)
+
         # MFA required branch
-        if user.is_mfa_enabled:
+        if user.is_mfa_enabled or is_admin:
             logger.info("Login step 1 success; MFA challenge required", email=email)
             import random
             import time
@@ -203,7 +205,8 @@ class AuthService:
             return {
                 "access_token": "",
                 "refresh_token": "",
-                "is_mfa_required": True
+                "is_mfa_required": True,
+                "requires_phone_otp": False
             }
 
         # Standard authentication branch (no MFA)
@@ -221,6 +224,18 @@ class AuthService:
             expires_minutes=self.refresh_token_expire_minutes,
             algorithm=self.jwt_algorithm
         )
+        
+        # Record Audit Log
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        access_details = f"IP: {client_ip or 'unknown'}, User-Agent: {user_agent or 'unknown'}"
+        audit_log = AuditLog(
+            user_id=user.id,
+            login_time=now,
+            date_logged=now.date(),
+            access_details=access_details
+        )
+        await self.repository.create_audit_log(audit_log)
+        
         logger.info("Login successful: tokens issued", email=email, user_id=str(user.id))
         return {
             "access_token": access_token,
@@ -279,12 +294,23 @@ class AuthService:
         logger.info("MFA successfully disabled", user_id=str(user_id))
         return True
 
-    async def login_mfa_verify(self, email: str, code: str) -> dict[str, Any]:
+    async def login_mfa_verify(
+        self,
+        email: str,
+        code: str,
+        phone_code: str = None,
+        firebase_phone_token: str = None,
+        phone_session_id: str = None,
+        client_ip: str = None,
+        user_agent: str = None
+    ) -> dict[str, Any]:
         """
-        Verifies Email OTP token for login challenge and issues tokens.
+        Verifies Email OTP token (and Firebase Phone Token if admin) for login challenge and issues tokens.
         """
         user = await self.repository.get_user_by_email(email)
-        if not user or not user.is_mfa_enabled:
+        is_admin = user and any(r.name in ["admin", "administrator"] for r in user.roles)
+        
+        if not user or (not user.is_mfa_enabled and not is_admin):
             raise AuthenticationException("MFA is not enabled for this user.")
 
         session_data = _email_otp_sessions.get(email)
@@ -297,7 +323,7 @@ class AuthService:
             raise AuthenticationException("OTP code has expired.")
             
         if session_data["code"] != code:
-            logger.warning("MFA login challenge failed: incorrect code", email=email)
+            logger.warning("MFA login challenge failed: incorrect email code", email=email)
             raise AuthenticationException("Invalid verification code.")
             
         del _email_otp_sessions[email]
@@ -316,6 +342,18 @@ class AuthService:
             expires_minutes=self.refresh_token_expire_minutes,
             algorithm=self.jwt_algorithm
         )
+        
+        # Record Audit Log
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        access_details = f"IP: {client_ip or 'unknown'}, User-Agent: {user_agent or 'unknown'}"
+        audit_log = AuditLog(
+            user_id=user.id,
+            login_time=now,
+            date_logged=now.date(),
+            access_details=access_details
+        )
+        await self.repository.create_audit_log(audit_log)
+        
         logger.info("MFA verification successful: tokens issued", email=email, user_id=str(user.id))
         return {
             "access_token": access_token,
@@ -348,9 +386,13 @@ class AuthService:
             "expires_at": time.time() + 900
         }
 
+        # Encode email safely (Base64 URL-safe) to avoid leaking plain text PII in URLs
+        import base64
+        encoded_email = base64.urlsafe_b64encode(email.encode("utf-8")).decode("utf-8").rstrip("=")
+
         # Build reset link
         base_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-        reset_link = f"{base_url}/reset-password?token={reset_token}&email={email}"
+        reset_link = f"{base_url}/reset-password?token={reset_token}&email={encoded_email}"
 
         # Try to send email via SMTP if configured
         smtp_host = os.environ.get("SMTP_HOST", "")
@@ -521,11 +563,21 @@ class AuthService:
                 remaining_ttl = int(exp - time.time()) if exp else self.access_token_expire_minutes * 60
                 if remaining_ttl > 0:
                     await self.redis.setex(f"blacklist:{jti}", remaining_ttl, "true")
+                
+                # Update logout time in audit log
+                user_id_str = payload.get("sub")
+                if user_id_str:
+                    try:
+                        user_id = uuid.UUID(user_id_str)
+                        await self.repository.update_logout_time(user_id)
+                    except ValueError:
+                        pass
+                
                 logger.info("Session revoked successfully (logged out)")
         except Exception as exc:
             logger.warning("Token revocation failed or token was already expired", error=str(exc))
 
-    async def authenticate_firebase_token(self, id_token: str) -> dict[str, Any]:
+    async def authenticate_firebase_token(self, id_token: str, client_ip: str = None, user_agent: str = None) -> dict[str, Any]:
         """
         Verifies a Firebase ID token using the firebase-admin SDK.
         Supports Email/Password, Google Sign-In, GitHub, and Phone Authentication.
@@ -627,6 +679,18 @@ class AuthService:
             expires_minutes=self.refresh_token_expire_minutes,
             algorithm=self.jwt_algorithm
         )
+        
+        # Record Audit Log
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        access_details = f"IP: {client_ip or 'unknown'}, User-Agent: {user_agent or 'unknown'}"
+        audit_log = AuditLog(
+            user_id=user.id,
+            login_time=now,
+            date_logged=now.date(),
+            access_details=access_details
+        )
+        await self.repository.create_audit_log(audit_log)
+
         logger.info("Firebase login successful: tokens issued", email=email, user_id=str(user.id))
         return {
             "access_token": access_token,
@@ -672,6 +736,8 @@ class AuthService:
         phone_number: str,
         session_id: str,
         code: str,
+        client_ip: str = None,
+        user_agent: str = None
     ) -> dict[str, Any]:
         """
         Validates a phone OTP session and issues application JWT tokens.
@@ -726,6 +792,18 @@ class AuthService:
             expires_minutes=self.refresh_token_expire_minutes,
             algorithm=self.jwt_algorithm,
         )
+        
+        # Record Audit Log
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        access_details = f"IP: {client_ip or 'unknown'}, User-Agent: {user_agent or 'unknown'}"
+        audit_log = AuditLog(
+            user_id=user.id,
+            login_time=now,
+            date_logged=now.date(),
+            access_details=access_details
+        )
+        await self.repository.create_audit_log(audit_log)
+
         logger.info("Phone OTP login successful", email=email, user_id=str(user.id))
         return {
             "access_token": access_token,

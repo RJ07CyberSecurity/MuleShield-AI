@@ -63,6 +63,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -319,10 +321,13 @@ async def get_dashboard_stats(request: Request, ingestion_id: str | None = None)
                 )
                 if summary_res.status_code == 200:
                     summary = summary_res.json().get("data", {})
-                    total_txns       = summary.get("total_transactions", 0)
                     total_vol        = float(summary.get("total_volume", 0))
                     flagged          = summary.get("flagged_accounts_count", 0)
                     unique_accts     = summary.get("total_accounts", 0)
+                    currency_code    = summary.get("currency", "USD")
+                    
+                    currency_symbols = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "INR": "₹", "AUD": "A$", "CAD": "C$"}
+                    symbol = currency_symbols.get(currency_code, f"{currency_code} ")
 
                     return {
                         "success": True,
@@ -330,7 +335,7 @@ async def get_dashboard_stats(request: Request, ingestion_id: str | None = None)
                         "data": {
                             "total_accounts": f"{unique_accts:,}",
                             "critical_alerts": str(flagged),
-                            "suspected_laundered_volume": f"${total_vol:,.2f}",
+                            "suspected_laundered_volume": f"{symbol}{total_vol:,.2f}",
                             "ai_accuracy": f"{99.0 + (flagged % 10) / 10:.1f}%"
                         }
                     }
@@ -338,38 +343,18 @@ async def get_dashboard_stats(request: Request, ingestion_id: str | None = None)
                 logger.warning("Ingestion summary fetch failed, falling back to global stats", error=str(exc))
 
         # ── GLOBAL ALL-TIME STATS ─────────────────────────────────────────────
-        try:
-            acct_res = await client.get(f"{SERVICES_MAP['accounts']}/api/v1/accounts", headers=headers)
-            accounts = acct_res.json().get("data") or []
-            total_accounts = len(accounts)
-
-            alert_res = await client.get(f"{SERVICES_MAP['accounts']}/api/v1/alerts", headers=headers)
-            alerts = alert_res.json().get("data") or []
-            critical_alerts = len([a for a in alerts if isinstance(a, dict) and a.get("severity") in ("HIGH", "CRITICAL")])
-            suspected_volume = sum(float(a.get("score", 0)) * 35000 for a in alerts if isinstance(a, dict))
-
-            return {
-                "success": True,
-                "message": "Dashboard stats composed successfully.",
-                "data": {
-                    "total_accounts": f"{total_accounts:,}" if total_accounts else "0",
-                    "critical_alerts": str(critical_alerts),
-                    "suspected_laundered_volume": f"${suspected_volume:,.2f}" if suspected_volume else "$0.00",
-                    "ai_accuracy": f"{99.0 + (critical_alerts % 10) / 10:.1f}%"
-                }
+        # Disabled as per user request to only fetch data according to uploaded/selected statement
+        return {
+            "success": True,
+            "message": "Dashboard stats (empty - no statement selected).",
+            "data": {
+                "total_accounts": "0",
+                "critical_alerts": "0",
+                "suspected_laundered_volume": "$0.00",
+                "ai_accuracy": "99.0%"
             }
-        except Exception as exc:
-            logger.error("Failed to compose dashboard stats", error=str(exc))
-            return {
-                "success": True,
-                "message": "Dashboard stats (fallback).",
-                "data": {
-                    "total_accounts": "0",
-                    "critical_alerts": "0",
-                    "suspected_laundered_volume": "$0.00",
-                    "ai_accuracy": "99.0%"
-                }
-            }
+        }
+
 
 
 
@@ -402,37 +387,11 @@ async def get_dashboard_timeline(request: Request, ingestion_id: str | None = No
     except Exception as exc:
         logger.warning("Ingestion timeline fetch failed, using fallback", error=str(exc))
 
-    # Fallback static demo data
-    if time_range == "7D":
-        fallback_data = [
-            {"time": "Day 1", "value": 120},
-            {"time": "Day 2", "value": 250},
-            {"time": "Day 3", "value": 180},
-            {"time": "Day 4", "value": 390},
-            {"time": "Day 5", "value": 410},
-            {"time": "Day 6", "value": 150},
-            {"time": "Day 7", "value": 210},
-        ]
-    elif time_range == "30D":
-        fallback_data = [{"time": f"Day {i}", "value": 100 + ((i*17) % 150)} for i in range(1, 31)]
-    else:
-        fallback_data = [
-            {"time": "00:00", "value": 340},
-            {"time": "02:00", "value": 210},
-            {"time": "04:00", "value": 430},
-            {"time": "06:00", "value": 580},
-            {"time": "08:00", "value": 310},
-            {"time": "10:00", "value": 390},
-            {"time": "12:00", "value": 180},
-            {"time": "14:00", "value": 480},
-            {"time": "16:00", "value": 610},
-            {"time": "18:00", "value": 410}
-        ]
-
+    # No statement selected - do not return dummy demo data
     return {
         "success": True,
-        "message": "Timeline activity retrieved (demo fallback).",
-        "data": fallback_data
+        "message": "Timeline activity (empty - no statement selected).",
+        "data": []
     }
 
 
@@ -524,57 +483,11 @@ async def get_dashboard_critical_alerts(request: Request, ingestion_id: str | No
                     "data":    mapped_transactions
                 }
 
-            # ── GLOBAL mode: all critical alerts, deduplicated by account ─────
-            alert_res = await client.get(
-                f"{SERVICES_MAP['accounts']}/api/v1/alerts/critical", headers=headers
-            )
-            alerts = alert_res.json().get("data", [])
-
-            # Deduplicate: keep highest score per account_id
-            best: dict[str, dict] = {}
-            for alert in alerts:
-                acct_id   = str(alert.get("account_id", ""))
-                score_val = float(alert.get("score", 0))
-                if acct_id not in best or score_val > float(best[acct_id].get("score", 0)):
-                    best[acct_id] = alert
-
-            mapped_transactions = []
-            for acct_id, alert in best.items():
-                customer_name = "Unknown Entity"
-                try:
-                    acct_res  = await client.get(
-                        f"{SERVICES_MAP['accounts']}/api/v1/accounts/{acct_id}", headers=headers
-                    )
-                    acct_data = acct_res.json().get("data", {})
-                    acct_num  = acct_data.get("account_number", acct_id[:12])
-                    balance   = float(acct_data.get("balance", 0))
-                    currency  = "$" if acct_data.get("currency", "USD") == "USD" else ""
-                    cust_id   = acct_data.get("customer_id") or alert.get("customer_id")
-                    if cust_id:
-                        cust_res = await client.get(
-                            f"{SERVICES_MAP['customers']}/api/v1/customers/{cust_id}", headers=headers
-                        )
-                        if cust_res.status_code == 200:
-                            customer_name = cust_res.json().get("data", {}).get("first_name", "") + " " + cust_res.json().get("data", {}).get("last_name", "")
-                            customer_name = customer_name.strip() or "Unknown Entity"
-                except Exception:
-                    acct_num, balance, currency = acct_id[:12], 0.0, "$"
-
-                score_int = int(float(alert.get("score", 0)))
-                mapped_transactions.append({
-                    "id":            acct_num,
-                    "type":          type_map.get(alert.get("alert_type", ""), "External Wire"),
-                    "amount":        f"{currency}{balance:,.2f}",
-                    "score":         f"{score_int}/100",
-                    "status":        status_map.get(alert.get("status", ""), "Flagged"),
-                    "riskLevel":     alert.get("severity", "MEDIUM").lower(),
-                    "entity_name":   customer_name,
-                })
-
+            # ── GLOBAL mode: Disabled as per user request (only fetch when statement is selected)
             return {
                 "success": True,
-                "message": "Dashboard transactions composed successfully.",
-                "data":    mapped_transactions
+                "message": "Dashboard transactions (empty - no statement selected).",
+                "data":    []
             }
 
 

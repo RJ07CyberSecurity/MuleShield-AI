@@ -112,7 +112,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   setupMfa: async () => {
     try {
-      const response = await apiClient.post<any>("/api/v1/auth/mfa/setup");
+      const response = await apiClient.post<any>("/api/v1/auth/mfa/setup", {});
       if (response && response.success) {
         return response.data;
       }
@@ -141,7 +141,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   disableMfa: async () => {
     try {
-      const response = await apiClient.post<any>("/api/v1/auth/mfa/disable");
+      const response = await apiClient.post<any>("/api/v1/auth/mfa/disable", {});
       if (response && response.success) {
         set((state) => ({
           user: state.user ? { ...state.user, is_mfa_enabled: false } : null,

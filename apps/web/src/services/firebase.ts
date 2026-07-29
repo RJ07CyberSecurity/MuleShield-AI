@@ -95,6 +95,17 @@ export function createRecaptchaVerifier(containerId: string): RecaptchaVerifier 
   return verifier;
 }
 
+export function clearRecaptchaVerifier() {
+  if (typeof window !== "undefined" && (window as any).recaptchaVerifier) {
+    try {
+      (window as any).recaptchaVerifier.clear();
+    } catch (e) {
+      // ignore
+    }
+    (window as any).recaptchaVerifier = undefined;
+  }
+}
+
 export async function sendOtpToPhone(
   phoneNumber: string, 
   verifier: RecaptchaVerifier
@@ -105,7 +116,11 @@ export async function sendOtpToPhone(
     // so it doesn't trigger the Next.js development error overlay.
     console.error = (...args: any[]) => {
       const msg = args.join(" ");
-      if (msg.includes("auth/operation-not-allowed") || msg.includes("auth/invalid-app-credential")) {
+      if (
+        msg.includes("auth/operation-not-allowed") || 
+        msg.includes("auth/invalid-app-credential") ||
+        msg.includes("auth/billing-not-enabled")
+      ) {
         return;
       }
       originalError.apply(console, args);
@@ -113,7 +128,7 @@ export async function sendOtpToPhone(
     
     return await signInWithPhoneNumber(auth, phoneNumber, verifier);
   } catch (error: any) {
-    if (error.code !== "auth/operation-not-allowed") {
+    if (error.code !== "auth/operation-not-allowed" && error.code !== "auth/billing-not-enabled") {
       originalError("Phone OTP dispatch failed", error);
     }
     throw error;

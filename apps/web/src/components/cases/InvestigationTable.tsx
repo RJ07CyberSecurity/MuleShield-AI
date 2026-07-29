@@ -31,8 +31,8 @@ export default function InvestigationTable({
   const sortedCases = useMemo(() => {
     const sorted = [...cases];
     sorted.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
+      let aVal: any = (a as any)[sortField];
+      let bVal: any = (b as any)[sortField];
 
       switch (sortField) {
         case "customer":

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useCaseStore } from "../store/useCaseStore";
 import { useUIStore } from "../store/useUIStore";
+import { useAuthStore } from "../store/useAuthStore";
 import { InvestigationEvent } from "../types/cases";
 
 // ─────────────────────────────────────────────────────────────────────────────

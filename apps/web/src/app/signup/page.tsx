@@ -107,7 +107,7 @@ export default function SignupPage() {
 
       {/* Right Column (Sign Up Form) */}
       <div className="flex-1 p-8 md:p-24 flex flex-col justify-center bg-[#07090e]">
-        <div className="max-w-md w-full mx-auto space-y-8">
+        <div className="max-w-md w-full mx-auto space-y-8" suppressHydrationWarning>
           <div className="space-y-2">
             <h1 className="text-2xl font-bold text-on-surface">Create Account</h1>
             <p className="text-body-sm text-on-surface-variant">
@@ -115,7 +115,7 @@ export default function SignupPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSignup} className="space-y-6">
+          <form onSubmit={handleSignup} className="space-y-6" suppressHydrationWarning>
             {error && (
               <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
                 {error}
@@ -131,6 +131,7 @@ export default function SignupPage() {
                   type="text"
                   required
                   disabled={isLoading}
+                  suppressHydrationWarning
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="John"
@@ -145,6 +146,7 @@ export default function SignupPage() {
                   type="text"
                   required
                   disabled={isLoading}
+                  suppressHydrationWarning
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="Doe"
@@ -165,6 +167,7 @@ export default function SignupPage() {
                   type="email"
                   required
                   disabled={isLoading}
+                  suppressHydrationWarning
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="analyst@muleshield.ai"
@@ -181,6 +184,7 @@ export default function SignupPage() {
                 <button
                   type="button"
                   disabled={isLoading}
+                  suppressHydrationWarning
                   onClick={() => setShowPassword(!showPassword)}
                   className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base hover:text-primary transition-colors disabled:opacity-50"
                 >
@@ -190,6 +194,7 @@ export default function SignupPage() {
                   type={showPassword ? "text" : "password"}
                   required
                   disabled={isLoading}
+                  suppressHydrationWarning
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
@@ -201,6 +206,7 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={isLoading}
+              suppressHydrationWarning
               className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isLoading ? "Registering..." : "Create Account"}

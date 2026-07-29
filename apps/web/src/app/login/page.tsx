@@ -42,6 +42,7 @@ export default function LoginPage() {
   const [otpSent, setOtpSent] = useState(false);
   const [phoneSession, setPhoneSession] = useState<PhoneOtpSession | null>(null);
   const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
+  const [otpSuccessMessage, setOtpSuccessMessage] = useState<string | null>(null);
 
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +60,19 @@ export default function LoginPage() {
     setDevOtpHint(null);
   }, [loginMethod]);
 
+  // Handle direct access logout
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("reason") === "direct_access") {
+      localStorage.removeItem("token");
+      localStorage.removeItem("refresh_token");
+      sessionStorage.clear();
+      useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false });
+      setError("You have been logged out for security reasons due to a manual URL change.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   // ── Direct DB Login (no Firebase) ──
   const handleDirectLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,6 +87,7 @@ export default function LoginPage() {
       if (response?.success) {
         if (response.data.is_mfa_required) {
           setIsMfaStep(true);
+          return;
         } else if (response.data.access_token) {
           storeAuthTokens(response.data.access_token, response.data.refresh_token);
           await initializeAuth();
@@ -93,10 +108,12 @@ export default function LoginPage() {
     setError(null);
     setIsLoading(true);
     try {
-      const response = await apiClient.post<any>("/api/v1/auth/mfa/login-verify", {
+      const payload: any = {
         email,
         code: mfaCode
-      });
+      };
+
+      const response = await apiClient.post<any>("/api/v1/auth/mfa/login-verify", payload);
       if (response?.success && response.data.access_token) {
         storeAuthTokens(response.data.access_token, response.data.refresh_token);
         await initializeAuth();
@@ -106,6 +123,43 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       setError(err.message || "MFA verification failed.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAdminSendOtp = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!adminPhoneNumber.trim()) {
+      setError("Please enter a valid phone number including country code.");
+      return;
+    }
+    setError(null);
+    setAdminDevOtpHint(null);
+    setOtpSuccessMessage(null);
+    setIsLoading(true);
+    try {
+      let formattedPhone = adminPhoneNumber.trim();
+      if (!formattedPhone.startsWith("+")) {
+        if (/^\d+$/.test(formattedPhone)) {
+          formattedPhone = "+" + formattedPhone;
+        }
+      }
+      
+    const session = await sendPhoneOtp(formattedPhone);
+      setAdminPhoneSession(session);
+      setAdminPhoneSent(true);
+      if (session.provider === "backend" && session.devCode) {
+        setAdminDevOtpHint(session.devCode);
+        setOtpSuccessMessage("Firebase unavailable. Developer test code generated!");
+      } else {
+        setOtpSuccessMessage("OTP sent successfully via SMS!");
+      }
+    } catch (err: any) {
+      setError(
+        err.message ||
+          "Failed to send verification code. Please make sure the number format is valid."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -326,7 +380,7 @@ export default function LoginPage() {
       <div className="flex-1 p-8 md:p-24 flex flex-col justify-between bg-[#07090e]">
         <div />
 
-        <div className="max-w-md w-full mx-auto space-y-8">
+        <div className="max-w-md w-full mx-auto space-y-8" suppressHydrationWarning>
           <div className="space-y-2">
             <h1 className="text-2xl font-bold text-on-surface">Access Control</h1>
             <p className="text-body-sm text-on-surface-variant">
@@ -335,12 +389,13 @@ export default function LoginPage() {
           </div>
 
           {/* Tab selectors */}
-          <div className="flex border-b border-outline-variant/10 mb-6">
+          <div className="flex border-b border-outline-variant/10 mb-6" suppressHydrationWarning>
             {(["direct", "email", "phone"] as const).map((method) => (
               <button
                 key={method}
                 type="button"
                 disabled={isLoading}
+                suppressHydrationWarning
                 onClick={() => setLoginMethod(method)}
                 className={`flex-1 pb-3 text-xs font-label-mono uppercase tracking-wider font-bold border-b-2 transition-all ${
                   loginMethod === method
@@ -356,40 +411,40 @@ export default function LoginPage() {
           {/* ── Direct DB Form ── */}
           {loginMethod === "direct" && (
             isMfaStep ? (
-              <form onSubmit={handleMfaVerify} className="space-y-6">
+              <form onSubmit={handleMfaVerify} className="space-y-6" suppressHydrationWarning>
                 {error && (
                   <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
                     {error}
                   </div>
                 )}
                 
-                <div className="space-y-2">
-                  <label className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
-                    Verification Code (Email)
-                  </label>
+                <div className="space-y-4">
                   <div className="relative">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">
-                      pin
-                    </span>
+                    <label className="text-caption text-on-surface-variant font-medium block mb-1">
+                      Email Code
+                    </label>
+                    <div className="absolute left-4 top-[38px] -translate-y-1/2 text-on-surface-variant">
+                      <span className="material-symbols-outlined text-xl">mark_email_unread</span>
+                    </div>
                     <input
                       type="text"
                       required
-                      disabled={isLoading}
+                      placeholder="6-digit Email code"
+                      maxLength={6}
                       value={mfaCode}
                       onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ''))}
-                      maxLength={6}
-                      placeholder="Enter 6-digit code sent to your email"
-                      className="w-full bg-[#0c0e17] border border-outline-variant/30 rounded-xl pl-12 pr-4 py-3.5 text-body-sm text-on-surface focus:outline-none focus:border-primary/50 disabled:opacity-50 tracking-widest text-center font-bold"
+                      className="w-full bg-[#0c0e17] border border-outline-variant/30 rounded-xl px-4 py-3.5 pl-12 text-body-sm text-on-surface focus:outline-none focus:border-primary/50 tracking-widest font-mono"
                     />
                   </div>
                   <p className="text-xs text-on-surface-variant mt-2 text-center">
-                    A code was sent to {email}. It will expire in 5 minutes.
+                    An email code was sent to {email}. It will expire in 5 minutes.
                   </p>
                 </div>
                 
                 <button
                   type="submit"
                   disabled={isLoading || mfaCode.length !== 6}
+                  suppressHydrationWarning
                   className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {isLoading ? "Verifying..." : "Verify Code"}
@@ -398,6 +453,7 @@ export default function LoginPage() {
                 <div className="text-center">
                   <button
                     type="button"
+                    suppressHydrationWarning
                     onClick={() => { setIsMfaStep(false); setMfaCode(""); }}
                     className="text-xs text-primary hover:underline"
                   >
@@ -406,7 +462,7 @@ export default function LoginPage() {
                 </div>
               </form>
             ) : (
-            <form onSubmit={handleDirectLogin} className="space-y-6">
+            <form onSubmit={handleDirectLogin} className="space-y-6" suppressHydrationWarning>
               {error && (
                 <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
                   {error}
@@ -424,6 +480,7 @@ export default function LoginPage() {
                     type="email"
                     required
                     disabled={isLoading}
+                    suppressHydrationWarning
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="analyst@muleshield.ai"
@@ -448,6 +505,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     disabled={isLoading}
+                    suppressHydrationWarning
                     onClick={() => setShowPassword(!showPassword)}
                     className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base hover:text-primary transition-colors disabled:opacity-50"
                   >
@@ -457,6 +515,7 @@ export default function LoginPage() {
                     type={showPassword ? "text" : "password"}
                     required
                     disabled={isLoading}
+                    suppressHydrationWarning
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
@@ -470,6 +529,7 @@ export default function LoginPage() {
                   type="checkbox"
                   id="remember"
                   disabled={isLoading}
+                  suppressHydrationWarning
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="w-4 h-4 rounded border-outline-variant/30 bg-[#0c0e17] text-primary focus:ring-0 cursor-pointer disabled:opacity-50"
@@ -482,6 +542,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
+                suppressHydrationWarning
                 className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isLoading ? "Signing In..." : "Sign In"}
@@ -492,7 +553,7 @@ export default function LoginPage() {
 
           {/* ── Firebase Email Form ── */}
           {loginMethod === "email" && (
-            <form onSubmit={handleEmailSubmit} className="space-y-6">
+            <form onSubmit={handleEmailSubmit} className="space-y-6" suppressHydrationWarning>
               {error && (
                 <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
                   {error}
@@ -510,6 +571,7 @@ export default function LoginPage() {
                     type="email"
                     required
                     disabled={isLoading}
+                    suppressHydrationWarning
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@company.com"
@@ -525,6 +587,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     disabled={isLoading}
+                    suppressHydrationWarning
                     onClick={() => setShowPassword(!showPassword)}
                     className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base hover:text-primary transition-colors"
                   >
@@ -534,6 +597,7 @@ export default function LoginPage() {
                     type={showPassword ? "text" : "password"}
                     required
                     disabled={isLoading}
+                    suppressHydrationWarning
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
@@ -544,6 +608,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
+                suppressHydrationWarning
                 className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {isLoading ? "Signing In..." : "Sign In via Firebase"}
@@ -553,7 +618,7 @@ export default function LoginPage() {
 
           {/* ── Phone OTP Form ── */}
           {loginMethod === "phone" && (
-            <form onSubmit={otpSent ? handleVerifyOtp : handleSendOtp} className="space-y-6">
+            <form onSubmit={otpSent ? handleVerifyOtp : handleSendOtp} className="space-y-6" suppressHydrationWarning>
               {error && (
                 <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
                   {error}
@@ -572,6 +637,7 @@ export default function LoginPage() {
                       type="tel"
                       required
                       disabled={isLoading}
+                      suppressHydrationWarning
                       value={phoneNumber}
                       onChange={(e) => setPhoneNumber(e.target.value)}
                       placeholder="+14155552671"
@@ -593,6 +659,7 @@ export default function LoginPage() {
                       required
                       maxLength={6}
                       disabled={isLoading}
+                      suppressHydrationWarning
                       value={otp}
                       onChange={(e) => setOtp(e.target.value)}
                       placeholder="6-digit code"
@@ -604,6 +671,7 @@ export default function LoginPage() {
                     <div className="flex gap-3">
                       <button
                         type="button"
+                        suppressHydrationWarning
                         onClick={handleResendOtp}
                         className="text-on-surface hover:text-primary transition-colors font-bold"
                       >
@@ -611,6 +679,7 @@ export default function LoginPage() {
                       </button>
                       <button
                         type="button"
+                        suppressHydrationWarning
                         onClick={() => {
                           setOtpSent(false);
                           setDevOtpHint(null);
@@ -632,6 +701,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
+                suppressHydrationWarning
                 className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 transition-opacity disabled:opacity-50"
               >
                 {isLoading
@@ -657,6 +727,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 disabled={isLoading}
+                suppressHydrationWarning
                 onClick={() => handleFirebaseSSO("google")}
                 className="p-3 border border-outline-variant/20 rounded-xl bg-[#0c0e17] hover:bg-surface-container-high transition-colors flex items-center justify-center gap-2 font-bold text-xs disabled:opacity-50"
               >
@@ -671,6 +742,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 disabled={isLoading}
+                suppressHydrationWarning
                 onClick={() => handleFirebaseSSO("github")}
                 className="p-3 border border-outline-variant/20 rounded-xl bg-[#0c0e17] hover:bg-surface-container-high transition-colors flex items-center justify-center gap-2 font-bold text-xs disabled:opacity-50"
               >

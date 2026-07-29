@@ -13,6 +13,9 @@ import { useGraphStore } from "../../store/useGraphStore";
 import { useUIStore } from "../../store/useUIStore";
 import { getRiskColorClass } from "../../types/alerts";
 
+const nodeTypes = {};
+const edgeTypes = {};
+
 export default function NetworkGraphCanvas() {
   const { nodes: storeNodes, edges: storeEdges, selectedNodeId, setSelectedNodeId } = useGraphStore();
   const { addToast } = useUIStore();
@@ -196,6 +199,8 @@ export default function NetworkGraphCanvas() {
         <ReactFlow
           nodes={rfNodes}
           edges={rfEdges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodeClick={(_, node) => setSelectedNodeId(node.id)}
           onEdgeClick={(_, edge) => useGraphStore.getState().setSelectedEdgeId(edge.id)}
           onPaneClick={() => {

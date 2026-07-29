@@ -16,3 +16,15 @@ export function formatCurrency(amount: number, currencyCode: string = "USD"): st
     }).format(amount);
   }
 }
+
+export const CURRENCY_SYMBOL = (() => {
+  try {
+    const parts = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).formatToParts(0);
+    return parts.find(p => p.type === 'currency')?.value || '$';
+  } catch {
+    return '$';
+  }
+})();

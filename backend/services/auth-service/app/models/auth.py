@@ -2,6 +2,8 @@ import uuid
 from sqlalchemy import String, Boolean, ForeignKey, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from shared.database import Base
+from shared.database.encryption import EncryptedString
+from datetime import datetime, date
 
 # Many-to-Many association table linking Users to Roles
 user_roles = Table(
@@ -98,3 +100,25 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"<User(email={self.email}, is_active={self.is_active})>"
+
+class AuditLog(Base):
+    """
+    Encrypted audit log tracking user login and logout events.
+    """
+    __tablename__ = "audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    login_time: Mapped[datetime] = mapped_column(nullable=False)
+    logout_time: Mapped[datetime | None] = mapped_column(nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(nullable=True)
+    date_logged: Mapped[date] = mapped_column(index=True, nullable=False)
+    
+    # Encrypted field for sensitive connection details (e.g., IP address, User-Agent)
+    access_details: Mapped[str | None] = mapped_column(EncryptedString(500), nullable=True)
+
+    # Relationships
+    user: Mapped[User] = relationship("User")
+
+    def __repr__(self) -> str:
+        return f"<AuditLog(user_id={self.user_id}, login_time={self.login_time})>"

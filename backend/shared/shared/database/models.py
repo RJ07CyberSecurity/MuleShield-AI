@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import String, Numeric, DateTime, Float, ForeignKey, Text, JSON, Date, Boolean, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from shared.database.postgres import Base
+from shared.database.encryption import EncryptedString
 
 class Customer(Base):
     """
@@ -15,13 +16,13 @@ class Customer(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
     dob: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    mobile: Mapped[str] = mapped_column(String(50), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    pan_number: Mapped[str] = mapped_column(String(255), nullable=False)  # Encrpyted at rest
-    aadhaar_number_masked: Mapped[str] = mapped_column(String(255), nullable=False)  # Encrypted at rest
+    mobile: Mapped[str] = mapped_column(EncryptedString(255), nullable=False)
+    email: Mapped[str] = mapped_column(EncryptedString(255), unique=True, index=True, nullable=False)
+    pan_number: Mapped[str] = mapped_column(EncryptedString(255), nullable=False)  # Encrpyted at rest
+    aadhaar_number_masked: Mapped[str] = mapped_column(EncryptedString(255), nullable=False)  # Encrypted at rest
     occupation: Mapped[str] = mapped_column(String(100), nullable=False)
     annual_income: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=2), nullable=False)
-    address: Mapped[str] = mapped_column(String(500), nullable=False)
+    address: Mapped[str] = mapped_column(EncryptedString(500), nullable=False)
 
     # Relationships
     kyc_records: Mapped[list["KYCRecord"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
@@ -101,8 +102,8 @@ class Transaction(Base):
     transaction_id: Mapped[str | None] = mapped_column(String(100), unique=True, index=True, nullable=True)
     sender_account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
     receiver_account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
-    sender_account: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
-    receiver_account: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
+    sender_account: Mapped[str] = mapped_column(EncryptedString(255), index=True, nullable=False)
+    receiver_account: Mapped[str] = mapped_column(EncryptedString(255), index=True, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=4), nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="USD", nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
