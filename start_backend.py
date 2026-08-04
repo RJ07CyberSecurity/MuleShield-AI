@@ -22,6 +22,7 @@ dependencies = [
     "openpyxl",
     "python-dotenv",
     "websockets",         # Required for Gateway WebSocket proxy (/ws/cases)
+    "python-docx",
 ]
 
 print("Installing required Python packages...")

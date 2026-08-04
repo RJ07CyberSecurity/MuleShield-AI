@@ -16,6 +16,15 @@ export default function KPIStats({ cases }: KPIStatsProps) {
     const critical = cases.filter(c => c.priority === "CRITICAL").length;
     const escalated = cases.filter(c => c.status === "INVESTIGATING").length; // Mock
     const funds = cases.reduce((acc, c) => acc + (c.totalAmount || Math.floor(Math.random() * 500000)), 0);
+    const currencyCode = cases.length > 0 && cases[0].currency ? cases[0].currency : "USD";
+    const dynamicSymbol = (() => {
+      try {
+        const parts = new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCode }).formatToParts(0);
+        return parts.find(p => p.type === 'currency')?.value || '$';
+      } catch {
+        return '$';
+      }
+    })();
 
     return [
       { 
@@ -52,16 +61,16 @@ export default function KPIStats({ cases }: KPIStatsProps) {
       },
       { 
         label: "Funds Under Investigation", 
-        value: `${CURRENCY_SYMBOL}${(funds / 1000000).toFixed(2)}M`, 
-        trend: `+${CURRENCY_SYMBOL}${CURRENCY_SYMBOL}1.2M`, 
+        value: `${dynamicSymbol}${(funds / 1000000).toFixed(2)}M`, 
+        trend: `+${dynamicSymbol}1.2M`, 
         trendUp: true,
         icon: <DollarSign size={20} className="text-risk-high" />,
         color: "border-risk-high/30"
       },
       { 
         label: "Recovered Funds", 
-        value: `${CURRENCY_SYMBOL}${CURRENCY_SYMBOL}8.4M`, 
-        trend: `+${CURRENCY_SYMBOL}${CURRENCY_SYMBOL}400K`, 
+        value: `${dynamicSymbol}8.4M`, 
+        trend: `+${dynamicSymbol}400K`, 
         trendUp: true,
         icon: <ShieldCheck size={20} className="text-risk-low" />,
         color: "border-risk-low/30"

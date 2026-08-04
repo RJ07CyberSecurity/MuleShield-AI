@@ -18,6 +18,10 @@ interface PreviewRow {
   transaction_type: string;
   payment_channel: string;
   beneficiary: string;
+  balance?: number;
+  transaction_id?: string;
+  upi_id?: string;
+  purpose?: string;
 }
 
 interface UploadError {
@@ -359,19 +363,31 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
                       <th className="p-2.5 text-left">Sender</th>
                       <th className="p-2.5 text-left">Receiver</th>
                       <th className="p-2.5 text-left">Amount</th>
+                      <th className="p-2.5 text-left">Balance</th>
                       <th className="p-2.5 text-left">Channel</th>
+                      <th className="p-2.5 text-left">Ref ID</th>
+                      <th className="p-2.5 text-left">UPI ID</th>
                     </tr>
                   </thead>
                   <tbody>
                     {ingestionResult.preview.map((row, i) => (
                       <tr key={i} className="border-b border-outline-variant/10 text-xs text-on-surface text-left hover:bg-surface-container-low/40">
-                        <td className="p-2.5 font-label-mono">{row.timestamp.replace("T", " ").substring(0, 19)}</td>
-                        <td className="p-2.5 font-label-mono">{row.sender_account}</td>
-                        <td className="p-2.5 font-label-mono">{row.receiver_account}</td>
-                        <td className="p-2.5 font-bold font-label-mono text-primary">
+                        <td className="p-2.5 font-label-mono whitespace-normal break-all">{row.timestamp.replace("T", " ").substring(0, 19)}</td>
+                        <td className="p-2.5 font-label-mono whitespace-normal break-all">{row.sender_account}</td>
+                        <td className="p-2.5 font-label-mono whitespace-normal break-all">{row.receiver_account}</td>
+                        <td className="p-2.5 font-bold font-label-mono text-primary whitespace-normal break-all">
                           ${row.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
+                        <td className="p-2.5 font-label-mono text-on-surface-variant whitespace-normal break-all">
+                          {row.balance != null ? `$${row.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-[10px] text-error">Not Found</span>}
+                        </td>
                         <td className="p-2.5"><span className="px-2 py-0.5 rounded bg-surface-container-low border border-outline-variant/20 text-[9px] font-semibold">{row.payment_channel}</span></td>
+                        <td className="p-2.5 font-label-mono whitespace-normal break-all">
+                          {row.transaction_id || <span className="text-[10px] text-error">Not Found</span>}
+                        </td>
+                        <td className="p-2.5 font-label-mono whitespace-normal break-all">
+                          {row.upi_id && row.upi_id !== "Not Found" ? row.upi_id : <span className="text-[10px] text-error">Not Found</span>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

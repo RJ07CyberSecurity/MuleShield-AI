@@ -97,30 +97,42 @@ class Transaction(Base):
     __table_args__ = {'extend_existing': True}
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    owner_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
-    ingestion_id: Mapped[str] = mapped_column(String(100), index=True, nullable=False)
-    transaction_id: Mapped[str | None] = mapped_column(String(100), unique=True, index=True, nullable=True)
+    owner_id: Mapped[str | None] = mapped_column(Text, index=True, nullable=True)
+    ingestion_id: Mapped[str] = mapped_column(Text, index=True, nullable=False)
+    transaction_id: Mapped[str | None] = mapped_column(Text, unique=True, index=True, nullable=True)
     sender_account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
     receiver_account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
-    sender_account: Mapped[str] = mapped_column(EncryptedString(255), index=True, nullable=False)
-    receiver_account: Mapped[str] = mapped_column(EncryptedString(255), index=True, nullable=False)
+    sender_account: Mapped[str] = mapped_column(EncryptedString(), index=True, nullable=False)
+    receiver_account: Mapped[str] = mapped_column(EncryptedString(), index=True, nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=4), nullable=False)
-    currency: Mapped[str] = mapped_column(String(10), default="USD", nullable=False)
+    currency: Mapped[str] = mapped_column(Text, default="USD", nullable=False)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True, nullable=False)
-    transaction_type: Mapped[str] = mapped_column(String(50), nullable=False)  # TRANSFER, DEPOSIT, WITHDRAWAL
-    payment_channel: Mapped[str] = mapped_column(String(50), nullable=False)  # SWIFT, P2P, ACH
-    ifsc: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    bank_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    branch: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    beneficiary: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    purpose: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    location: Mapped[str | None] = mapped_column(String(250), nullable=True)
-    upi_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    merchant: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    device_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    ip_address: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    status: Mapped[str] = mapped_column(String(30), default="STAGED", nullable=False)  # STAGED, CONFIRMED
-    fingerprint: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    transaction_type: Mapped[str] = mapped_column(Text, nullable=False)  # TRANSFER, DEPOSIT, WITHDRAWAL
+    payment_channel: Mapped[str] = mapped_column(Text, nullable=False)  # SWIFT, P2P, ACH
+    ifsc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bank_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    branch: Mapped[str | None] = mapped_column(Text, nullable=True)
+    beneficiary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
+    location: Mapped[str | None] = mapped_column(Text, nullable=True)
+    upi_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    merchant: Mapped[str | None] = mapped_column(Text, nullable=True)
+    device_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    balance: Mapped[Decimal | None] = mapped_column(Numeric(precision=18, scale=4), nullable=True)
+    
+    # Raw extracted fields for exact byte-for-byte fidelity and compliance
+    sender_account_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    receiver_account_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    amount_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    balance_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timestamp_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transaction_id_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    upi_id_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    narration_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    status: Mapped[str] = mapped_column(Text, default="STAGED", nullable=False)  # STAGED, CONFIRMED
+    fingerprint: Mapped[str] = mapped_column(Text, unique=True, index=True, nullable=False)
 
     def __repr__(self) -> str:
         return (

@@ -54,28 +54,42 @@ export default function NetworkGraphCanvas() {
     const centerX = 450;
     const centerY = 350;
 
-    // Find center subject node (highest risk score or matching a keyword)
+    // Find center subject node (main account, or fallback to highest risk score)
+    const mainAccount = storeNodes.find((n) => n.type === "account" && !n.label.includes("Counterparty"));
     const sortedByRisk = [...storeNodes].sort((a, b) => b.riskScore - a.riskScore);
-    const centerNodeId = sortedByRisk[0].id;
+    const centerNodeId = mainAccount ? mainAccount.id : (sortedByRisk[0]?.id || "");
 
-    const mappedNodes: Node[] = storeNodes.map((node, idx) => {
+    let circleIdx = 0;
+    const mappedNodes: Node[] = storeNodes.map((node) => {
       const isCenter = node.id === centerNodeId;
-      // Avoid division-by-zero when nodeCount === 1
-      const divisor = Math.max(nodeCount - (isCenter ? 1 : 0), 1);
-      const angle = (idx * 2 * Math.PI) / divisor;
-      const x = isCenter ? centerX : centerX + radius * Math.cos(angle);
-      const y = isCenter ? centerY : centerY + radius * Math.sin(angle);
+      let x = centerX;
+      let y = centerY;
+      let isVisible = true;
+
+      if (!isCenter) {
+        const divisor = Math.max(nodeCount - (centerNodeId ? 1 : 0), 1);
+        const angle = (circleIdx * 2 * Math.PI) / divisor;
+        x = centerX + radius * Math.cos(angle);
+        y = centerY + radius * Math.sin(angle);
+        
+        // Use opacity for timeline playback instead of 'hidden' to avoid ReactFlow's notify() crash
+        isVisible = (circleIdx % 10) < playbackTime;
+        circleIdx++;
+      }
 
       const riskClass = getRiskColorClass(node.riskScore);
       const isSelected = selectedNodeId === node.id;
 
       let riskBorder = "border-outline-variant/35";
-      if (node.riskScore >= 90) riskBorder = "border-risk-critical";
-      else if (node.riskScore >= 70) riskBorder = "border-risk-high";
-      else if (node.riskScore >= 40) riskBorder = "border-risk-medium";
-
-      // Use opacity for timeline playback instead of 'hidden' to avoid ReactFlow's notify() crash
-      const isVisible = isCenter || (idx % 10) < playbackTime;
+      if (isCenter) {
+        riskBorder = "border-primary shadow-[0_0_20px_rgba(37,99,235,0.3)] ring-1 ring-primary/50";
+      } else if (node.riskScore >= 90) {
+        riskBorder = "border-risk-critical";
+      } else if (node.riskScore >= 70) {
+        riskBorder = "border-risk-high";
+      } else if (node.riskScore >= 40) {
+        riskBorder = "border-risk-medium";
+      }
 
       return {
         id: node.id,
@@ -193,6 +207,30 @@ export default function NetworkGraphCanvas() {
           SVG
         </button>
       </div>
+
+      {/* Target Entity Callout (Separate from Graph) */}
+      {(() => {
+        const main = storeNodes.find((n) => n.type === "account" && !n.label.includes("Counterparty"));
+        const target = main || [...storeNodes].sort((a, b) => b.riskScore - a.riskScore)[0];
+        if (!target) return null;
+        return (
+          <div className="absolute bottom-20 right-4 z-10 p-4 bg-surface-container-high/95 backdrop-blur-md rounded-xl border border-primary/40 shadow-lg flex flex-col gap-1 w-64 pointer-events-auto">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-primary text-sm">account_balance_wallet</span>
+                <span className="text-[10px] font-bold text-primary uppercase tracking-wider">Target Entity</span>
+              </div>
+            </div>
+            <p className="text-sm font-black text-on-surface truncate" title={target.label}>{target.label}</p>
+            <div className="flex justify-between items-center mt-2 border-t border-outline-variant/20 pt-2">
+              <span className="text-[10px] text-on-surface-variant font-label-mono uppercase">Risk Score</span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${getRiskColorClass(target.riskScore)}`}>
+                {target.riskScore}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Main Canvas view */}
       <div className="h-[480px] w-full">

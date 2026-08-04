@@ -50,7 +50,7 @@ async def list_accounts(
     """
     Returns registered accounts, optionally filtered by customer UUID.
     """
-    owner_id = request.headers.get("x-user-id")
+    owner_id = claims.get("sub")
     accounts = await service.list_accounts(customer_id=customer_id, owner_id=owner_id)
     return ResponseEnvelope(
         success=True,

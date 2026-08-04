@@ -12,6 +12,7 @@ from shared.database.neo4j import neo4j_manager
 from app.services.features import FeatureEngineeringPipeline
 from app.services.ml_service import ml_model_service
 from shared.schemas import ResponseEnvelope
+from shared.authentication.auth import get_current_user
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/detection", tags=["Detection"])
@@ -350,13 +351,14 @@ async def run_detection(
 async def list_flagged_accounts(
     request: Request,
     ingestion_id: str | None = None,
-    db: AsyncSession = Depends(get_db_session)
+    db: AsyncSession = Depends(get_db_session),
+    current_user: dict = Depends(get_current_user)
 ) -> ResponseEnvelope[list[FlaggedAccountResponse]]:
     """
     Returns ranked accounts flagged during compliance screening, sorted by risk score.
     """
     logger.info("Listing flagged accounts", ingestion_id=ingestion_id)
-    owner_id = request.headers.get("x-user-id")
+    owner_id = current_user.get("sub")
     if not owner_id:
         return ResponseEnvelope(
             success=True,

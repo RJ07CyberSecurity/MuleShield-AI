@@ -1,7 +1,7 @@
 import os
 from typing import Any, Optional
 from cryptography.fernet import Fernet
-from sqlalchemy.types import TypeDecorator, String
+from sqlalchemy.types import TypeDecorator, String, Text
 
 class KMSConfig:
     """Mock KMS configuration using environment variables."""
@@ -22,7 +22,7 @@ class EncryptedString(TypeDecorator):
     SQLAlchemy custom type for encrypting data at rest.
     Values are encrypted before saving to the DB and decrypted when reading.
     """
-    impl = String
+    impl = Text
     cache_ok = True
 
     def process_bind_param(self, value: Optional[str], dialect: Any) -> Optional[str]:

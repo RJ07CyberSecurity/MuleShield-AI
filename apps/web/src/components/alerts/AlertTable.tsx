@@ -330,20 +330,20 @@ export default function AlertTable() {
                       />
                     </td>
                     {visibleColumns.id && (
-                      <td className="px-6 py-4 font-bold text-on-surface truncate">{alert.id}</td>
+                      <td className="px-6 py-4 font-bold text-on-surface whitespace-normal break-all">{alert.id}</td>
                     )}
                     {visibleColumns.sourceAccount && (
-                      <td className="px-6 py-4 font-label-mono text-on-surface-variant truncate">
+                      <td className="px-6 py-4 font-label-mono text-on-surface-variant whitespace-normal break-all">
                         {alert.sourceAccount}
                       </td>
                     )}
                     {visibleColumns.destinationAccount && (
-                      <td className="px-6 py-4 font-label-mono text-on-surface-variant truncate">
+                      <td className="px-6 py-4 font-label-mono text-on-surface-variant whitespace-normal break-all">
                         {alert.destinationAccount}
                       </td>
                     )}
                     {visibleColumns.amount && (
-                      <td className="px-6 py-4 font-bold text-on-surface truncate">
+                      <td className="px-6 py-4 font-bold text-on-surface whitespace-normal break-all">
                         {alert.amount.toLocaleString()} {alert.currency}
                       </td>
                     )}
@@ -376,7 +376,7 @@ export default function AlertTable() {
                       </td>
                     )}
                     {visibleColumns.timestamp && (
-                      <td className="px-6 py-4 text-right text-on-surface-variant text-caption font-label-mono truncate">
+                      <td className="px-6 py-4 text-right text-on-surface-variant text-caption font-label-mono whitespace-normal break-all">
                         {new Date(alert.timestamp).toLocaleTimeString()}
                       </td>
                     )}

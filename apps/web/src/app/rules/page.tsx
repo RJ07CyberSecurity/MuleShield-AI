@@ -18,9 +18,9 @@ export default function RulesPage() {
   // Catalog States
   const [rules, setRules] = useState([
     { id: "R-1092-B", name: "Rapid In-Out Flow", desc: "Detects cyclic fund movement within 24h", category: "Velocity", active: true, threshold: "> 500% baseline", weight: 85, date: "2023-10-24 14:22" },
-    { id: "R-2204-A", name: "Dormant Reactivation", desc: "High volume after 6+ months inactivity", category: "Behavior", active: true, threshold: "> $10,000.00", weight: 95, date: "2023-11-01 09:10" },
+    { id: "R-2204-A", name: "Dormant Reactivation", desc: "High volume after 6+ months inactivity", category: "Behavior", active: true, threshold: `> ${CURRENCY_SYMBOL}10,000.00`, weight: 95, date: "2023-11-01 09:10" },
     { id: "R-4011-G", name: "Sanctioned Geo Hop", desc: "Triangulated login from high-risk zones", category: "Geography", active: false, threshold: "Tier-3 List Match", weight: 60, date: "2023-10-30 18:45" },
-    { id: "R-9982-M", name: "Structured Deposits", desc: "Recurring amounts < $10k threshold", category: "Velocity", active: true, threshold: "4x in 72hrs", weight: 92, date: "2023-11-02 11:30" },
+    { id: "R-9982-M", name: "Structured Deposits", desc: `Recurring amounts < ${CURRENCY_SYMBOL}10k threshold`, category: "Velocity", active: true, threshold: "4x in 72hrs", weight: 92, date: "2023-11-02 11:30" },
   ]);
 
   // Builder States
@@ -287,7 +287,7 @@ export default function RulesPage() {
                 <label className="text-on-surface-variant font-medium">Rule Identification</label>
                 <input
                   type="text"
-                  value="RT-MULE-049: Structural Layering taking inputs"
+                  defaultValue="RT-MULE-049: Structural Layering taking inputs"
                   className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-3.5 py-2 text-on-surface focus:outline-none"
                 />
               </div>
@@ -296,6 +296,7 @@ export default function RulesPage() {
                 <label className="text-on-surface-variant font-medium">Description</label>
                 <textarea
                   rows={3}
+                  readOnly
                   value="Identifies patterns associated with smurfing or structural transfers designed to evade AML reporting thresholds."
                   className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-3.5 py-2 text-on-surface focus:outline-none leading-relaxed"
                 />
@@ -341,12 +342,12 @@ export default function RulesPage() {
                     <div className="flex gap-2">
                       <input
                         type="text"
-                        value="$ 9500.00"
+                        defaultValue={`${CURRENCY_SYMBOL} 9500.00`}
                         className="bg-surface-container-low border border-outline-variant/20 rounded px-2 py-1 text-xs font-semibold text-on-surface w-full"
                       />
                       <input
                         type="text"
-                        value="± 2.5%"
+                        defaultValue="± 2.5%"
                         className="bg-surface-container-low border border-outline-variant/20 rounded px-2 py-1 text-xs font-semibold text-on-surface w-20 text-center"
                       />
                     </div>
@@ -357,12 +358,12 @@ export default function RulesPage() {
                     <div className="flex gap-2">
                       <input
                         type="text"
-                        value="72 Hours"
+                        defaultValue="72 Hours"
                         className="bg-surface-container-low border border-outline-variant/20 rounded px-2 py-1 text-xs font-semibold text-on-surface w-full"
                       />
                       <input
                         type="text"
-                        value="5 Hits"
+                        defaultValue="5 Hits"
                         className="bg-surface-container-low border border-outline-variant/20 rounded px-2 py-1 text-xs font-semibold text-on-surface w-20 text-center"
                       />
                     </div>
@@ -469,11 +470,19 @@ export default function RulesPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
               <div className="space-y-1.5 text-xs">
                 <label className="text-on-surface-variant font-medium">Date Range</label>
-                <input
-                  type="date"
-                  value="2023-01-01"
-                  className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-3.5 py-2 text-on-surface focus:outline-none"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    defaultValue="2023-01-01"
+                    className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-2 py-2 text-on-surface focus:outline-none"
+                  />
+                  <span className="text-on-surface-variant text-[10px] uppercase font-bold">to</span>
+                  <input
+                    type="date"
+                    defaultValue="2023-12-31"
+                    className="w-full bg-[#07090e] border border-outline-variant/30 rounded-xl px-2 py-2 text-on-surface focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5 text-xs">
@@ -547,21 +556,21 @@ export default function RulesPage() {
                   <tr className="border-b border-outline-variant/10 text-xs hover:bg-surface-container-high/20 transition-colors">
                     <td className="px-4 py-4 font-label-mono text-primary">TXN-9821-XP</td>
                     <td className="px-4 py-4 font-semibold text-on-surface">Global Logistics Ltd.</td>
-                    <td className="px-4 py-4 font-bold text-on-surface">$12,450.00</td>
+                    <td className="px-4 py-4 font-bold text-on-surface">{CURRENCY_SYMBOL}12,450.00</td>
                     <td className="px-4 py-4 font-bold text-risk-high font-label-mono">0.92</td>
                     <td className="px-4 py-4 text-right font-bold text-risk-low uppercase">True Positive</td>
                   </tr>
                   <tr className="border-b border-outline-variant/10 text-xs hover:bg-surface-container-high/20 transition-colors">
                     <td className="px-4 py-4 font-label-mono text-primary">TXN-4421-QA</td>
                     <td className="px-4 py-4 font-semibold text-on-surface">Elena Richardson</td>
-                    <td className="px-4 py-4 font-bold text-on-surface">$4,800.00</td>
+                    <td className="px-4 py-4 font-bold text-on-surface">{CURRENCY_SYMBOL}4,800.00</td>
                     <td className="px-4 py-4 font-bold text-risk-high font-label-mono">0.88</td>
                     <td className="px-4 py-4 text-right font-bold text-risk-low uppercase">True Negative</td>
                   </tr>
                   <tr className="border-b border-outline-variant/10 text-xs hover:bg-surface-container-high/20 transition-colors">
                     <td className="px-4 py-4 font-label-mono text-primary">TXN-1002-LK</td>
                     <td className="px-4 py-4 font-semibold text-on-surface">Skyline Consulting</td>
-                    <td className="px-4 py-4 font-bold text-on-surface">$2,100.00</td>
+                    <td className="px-4 py-4 font-bold text-on-surface">{CURRENCY_SYMBOL}2,100.00</td>
                     <td className="px-4 py-4 font-bold text-risk-medium font-label-mono">0.45</td>
                     <td className="px-4 py-4 text-right font-bold text-risk-high uppercase">False Positive</td>
                   </tr>

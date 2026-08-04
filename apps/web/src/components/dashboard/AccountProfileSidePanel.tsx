@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X, User, Building, Activity, FileText, Phone, Mail, MapPin, Briefcase, Hash, Link as LinkIcon, AlertCircle, CheckCircle, XCircle } from "lucide-react";
 import { apiClient } from "../../services/api-client";
 import { useUIStore } from "../../store/useUIStore";
+import { getCurrencySymbol } from "../../utils/currency";
 
 interface CustomerInfo {
   full_name: string;
@@ -163,7 +164,7 @@ export default function AccountProfileSidePanel({ accountId, onClose, onSelectAc
                   <div>
                     <p className="text-[10px] text-on-surface-variant uppercase font-bold">Ledger Balance</p>
                     <p className="font-label-mono font-bold text-primary">
-                      ${profile.balance.toLocaleString()} <span className="text-[10px] text-on-surface-variant">{profile.currency}</span>
+                      {getCurrencySymbol(profile.currency)}{profile.balance.toLocaleString()} <span className="text-[10px] text-on-surface-variant">{profile.currency}</span>
                     </p>
                   </div>
                   <div>
@@ -254,13 +255,13 @@ export default function AccountProfileSidePanel({ accountId, onClose, onSelectAc
                     <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10 text-center">
                       <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-1">Total Volume</p>
                       <p className="text-lg font-label-mono font-black text-on-surface">
-                        ${profile.transaction_summary.total_volume_30d.toLocaleString()}
+                        {getCurrencySymbol(profile.currency)}{profile.transaction_summary.total_volume_30d.toLocaleString()}
                       </p>
                     </div>
                     <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10 text-center">
                       <p className="text-[10px] text-on-surface-variant uppercase font-bold mb-1">Latest Txn</p>
                       <p className="text-sm font-label-mono font-bold text-on-surface">
-                        ${profile.transaction_summary.latest_amount.toLocaleString()}
+                        {getCurrencySymbol(profile.currency)}{profile.transaction_summary.latest_amount.toLocaleString()}
                       </p>
                       <p className="text-[9px] text-on-surface-variant mt-1">
                         {new Date(profile.transaction_summary.latest_timestamp).toLocaleString()}
@@ -293,7 +294,7 @@ export default function AccountProfileSidePanel({ accountId, onClose, onSelectAc
                           <p className="text-[10px] text-on-surface-variant">{acc.bank_name}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xs font-label-mono font-bold text-primary">${acc.total_volume.toLocaleString()}</p>
+                          <p className="text-xs font-label-mono font-bold text-primary">{getCurrencySymbol(profile.currency)}{acc.total_volume.toLocaleString()}</p>
                           <p className="text-[10px] text-on-surface-variant">{acc.transaction_count} txns</p>
                         </div>
                       </div>

@@ -1,48 +1,14 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useUIStore } from "../../../../store/useUIStore";
+import { useUIStore } from "../../store/useUIStore";
 import { apiClient } from "@/services/api-client";
-import { motion } from "framer-motion";
 
-interface PageProps {
-  params: Promise<{ id: string }>;
-}
-
-export default function SubjectProfilePage({ params }: PageProps) {
-  const { id: caseId } = use(params);
-  const router = useRouter();
+export default function CustomerProfilePage() {
   const { addToast } = useUIStore();
-  
   const [profileData, setProfileData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      setLoading(true);
-      try {
-        const resolvedCaseId = caseId === "ACC-092281" ? "c1c1c1c1-1111-1111-1111-c1c1c1c1c1c1" : caseId;
-        const caseRes = await apiClient.get<any>(`/api/v1/cases/${resolvedCaseId}`);
-        if (caseRes?.success && caseRes.data) {
-          const custId = caseRes.data.customer_id;
-          if (custId) {
-            const custRes = await apiClient.get<any>(`/api/v1/customers/${custId}`);
-            if (custRes?.success && custRes.data) {
-              setProfileData(custRes.data);
-            }
-          }
-        }
-      } catch (err: any) {
-        // use fallback data matching screenshot
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProfile();
-  }, [caseId]);
+  const [loading, setLoading] = useState(false);
 
   const customerName = profileData ? `${profileData.first_name} ${profileData.last_name}` : "Ananya Sharma";
   const customerId = profileData ? `IND-${profileData.id.slice(0, 4).toUpperCase()}-XQ` : "IND-8842-XQ";
@@ -54,7 +20,7 @@ export default function SubjectProfilePage({ params }: PageProps) {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-xs font-label-mono text-on-surface-variant uppercase tracking-wider">Loading Financial Profile...</p>
+          <p className="text-xs font-label-mono text-on-surface-variant uppercase tracking-wider">Loading Customer Profile...</p>
         </div>
       </div>
     );
@@ -298,7 +264,6 @@ export default function SubjectProfilePage({ params }: PageProps) {
             </div>
 
             <div className="h-48 rounded-xl bg-surface-container-lowest border border-outline-variant/15 flex items-center justify-center relative overflow-hidden">
-              {/* Mini SVG Graph Topology Visual */}
               <svg className="w-full h-full" viewBox="0 0 400 180">
                 <line x1="200" y1="90" x2="120" y2="50" stroke="#F97316" strokeWidth="2" strokeDasharray="4 2" />
                 <line x1="200" y1="90" x2="280" y2="130" stroke="#F97316" strokeWidth="2" strokeDasharray="4 2" />
@@ -331,7 +296,6 @@ export default function SubjectProfilePage({ params }: PageProps) {
 
             <div className="space-y-6 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-outline-variant/20 pl-6">
               
-              {/* Event 1: Today */}
               <div className="relative text-xs space-y-1">
                 <span className="absolute -left-6 top-1 w-2.5 h-2.5 rounded-full bg-risk-critical border-2 border-surface-container-low"></span>
                 <p className="text-[10px] font-label-mono text-on-surface-variant font-semibold">Today, 02:14 AM</p>
@@ -341,7 +305,6 @@ export default function SubjectProfilePage({ params }: PageProps) {
                 </p>
               </div>
 
-              {/* Event 2: Yesterday */}
               <div className="relative text-xs space-y-1">
                 <span className="absolute -left-6 top-1 w-2.5 h-2.5 rounded-full bg-primary border-2 border-surface-container-low"></span>
                 <p className="text-[10px] font-label-mono text-on-surface-variant font-semibold">Yesterday, 11:30 PM</p>
@@ -351,14 +314,12 @@ export default function SubjectProfilePage({ params }: PageProps) {
                 </p>
               </div>
 
-              {/* Event 3: Oct 12, 2021 */}
               <div className="relative text-xs space-y-1">
                 <span className="absolute -left-6 top-1 w-2.5 h-2.5 rounded-full bg-outline-variant border-2 border-surface-container-low"></span>
                 <p className="text-[10px] font-label-mono text-on-surface-variant font-semibold">Oct 12, 2021</p>
                 <h4 className="font-bold text-on-surface text-xs leading-tight">KYC Documents Updated</h4>
               </div>
 
-              {/* Event 4: Oct 10, 2021 */}
               <div className="relative text-xs space-y-1">
                 <span className="absolute -left-6 top-1 w-2.5 h-2.5 rounded-full bg-outline-variant border-2 border-surface-container-low"></span>
                 <p className="text-[10px] font-label-mono text-on-surface-variant font-semibold">Oct 10, 2021</p>

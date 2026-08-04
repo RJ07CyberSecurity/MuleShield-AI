@@ -27,14 +27,14 @@ interface AlertState {
 function mapBackendAlert(a: any): Alert {
   return {
     id: String(a.id),
-    transactionId: `TX-${String(a.id).slice(0, 6).toUpperCase()}`,
-    amount: parseFloat(String(a.score)) * 500, // derived estimate
+    transactionId: a.transaction_id_raw || a.transaction_id || String(a.id),
+    amount: a.amount != null ? parseFloat(String(a.amount)) : parseFloat(String(a.score)) * 500,
     currency: a.currency || "USD",
-    sourceAccount: `ACC-${String(a.account_id).slice(0, 8).toUpperCase()}`,
-    destinationAccount: `ACC-${String(a.customer_id).slice(0, 8).toUpperCase()}`,
+    sourceAccount: a.sender_account_raw || a.sender_account || a.source_account || String(a.account_id),
+    destinationAccount: a.receiver_account_raw || a.receiver_account || a.destination_account || String(a.customer_id),
     riskScore: Math.round(a.score),
     status: a.status === "NEW" || a.status === "UNDER_REVIEW" ? "PENDING" : a.status,
-    timestamp: a.created_at,
+    timestamp: a.timestamp_raw || a.created_at || a.timestamp,
     tippingPoint: a.trigger_reason,
     shapExplanation: {
       [a.alert_type.replace(/_/g, " ")]: 0.6,
@@ -42,15 +42,15 @@ function mapBackendAlert(a: any): Alert {
       "Account Velocity Deviation": 0.15,
     },
     entityDetails: {
-      name: a.entity_name || "Unknown Entity",
+      name: a.entity_name || a.sender_account_raw || a.sender_account || "Unknown Entity",
       category:
         a.severity === "CRITICAL"
           ? "Critical Mule Node"
           : a.severity === "HIGH"
           ? "High Risk Account"
           : "Suspicious Account",
-      deviceId: `DEV-${String(a.account_id).slice(0, 8).toUpperCase()}`,
-      ipAddress: "192.168.x.x",
+      deviceId: a.device_id || "DEV-UNKNOWN",
+      ipAddress: a.ip_address || "192.168.x.x",
     },
   };
 }

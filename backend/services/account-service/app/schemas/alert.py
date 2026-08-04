@@ -60,3 +60,7 @@ class GraphEdge(BaseModel):
 class GraphDataResponse(BaseModel):
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+    reconciliationPassed: bool = True
+    rawTxCount: int = 0
+    dedupGraphTxCount: int = 0
+    uniqueEntitiesCount: int = 0

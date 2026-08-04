@@ -8,7 +8,8 @@ import { getRiskColorClass } from "../../types/alerts";
 export default function NodeInspector() {
   const { nodes, edges, selectedNodeId, selectedEdgeId, expandNode, isLoading } = useGraphStore();
   const { addToast } = useUIStore();
-  const [activeTab, setActiveTab] = useState<"properties" | "risk" | "hops" | "mule_summary" | "investigation">("properties");
+  const [activeTab, setActiveTab] = useState<"properties" | "timeline" | "risk" | "hops" | "mule_summary" | "investigation">("properties");
+  const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
@@ -41,7 +42,7 @@ export default function NodeInspector() {
               {selectedEdge.label || "LINK"}
             </span>
           </div>
-          <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface truncate">
+          <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface whitespace-normal break-all">
             {details.transactionId || selectedEdge.id}
           </h3>
         </div>
@@ -49,11 +50,11 @@ export default function NodeInspector() {
         <div className="p-4 rounded-xl border border-outline-variant/15 bg-surface-container-lowest space-y-4 text-body-sm">
           <div className="flex justify-between items-center pb-3 border-b border-outline-variant/10">
             <span className="text-on-surface-variant font-medium text-xs">Sender</span>
-            <span className="text-on-surface font-semibold text-xs text-right truncate max-w-[150px]">{details.senderName || selectedEdge.source}</span>
+            <span className="text-on-surface font-semibold text-xs text-right whitespace-normal break-all">{details.senderName || selectedEdge.source}</span>
           </div>
           <div className="flex justify-between items-center pb-3 border-b border-outline-variant/10">
             <span className="text-on-surface-variant font-medium text-xs">Receiver</span>
-            <span className="text-on-surface font-semibold text-xs text-right truncate max-w-[150px]">{details.receiverName || selectedEdge.target}</span>
+            <span className="text-on-surface font-semibold text-xs text-right whitespace-normal break-all">{details.receiverName || selectedEdge.target}</span>
           </div>
           <div className="flex justify-between items-center pb-3 border-b border-outline-variant/10">
             <span className="text-on-surface-variant font-medium text-xs">Amount</span>
@@ -135,14 +136,14 @@ export default function NodeInspector() {
             Risk: {selectedNode.riskScore}
           </span>
         </div>
-        <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface truncate">
+        <h3 className="font-headline-sm text-headline-sm font-semibold text-on-surface whitespace-normal break-all">
           {selectedNode.id}
         </h3>
       </div>
 
       {/* Tabs */}
       <div className="flex border-b border-outline-variant/20 overflow-x-auto custom-scrollbar">
-        {["properties", "risk", "hops", ...(nodeDetails?.muleSummary ? ["mule_summary"] : [])].map((tab) => (
+        {["properties", "timeline", "risk", "hops", ...(nodeDetails?.muleSummary ? ["mule_summary"] : [])].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
@@ -152,27 +153,120 @@ export default function NodeInspector() {
                 : "border-transparent text-on-surface-variant hover:text-on-surface"
             }`}
           >
-            {tab}
+            {tab === "timeline" ? `timeline (${(nodeDetails?.transactions as any[])?.length || 0})` : tab}
           </button>
         ))}
       </div>
 
       {/* Tab Contents */}
       {activeTab === "properties" && (
-        <div className="p-4 rounded-xl border border-outline-variant/15 bg-surface-container-lowest space-y-3 text-body-sm animate-fade-in">
-          {Object.entries(nodeDetails || {}).map(([key, val]) => {
-            if (key === "muleSummary" || key === "pastRecords") return null;
-            const formattedKey = key.charAt(0).toUpperCase() + key.slice(1);
-            return (
-              <div
-                key={key}
-                className="flex justify-between items-center pb-2 last:pb-0 last:border-b-0 border-b border-outline-variant/10"
-              >
-                <span className="text-on-surface-variant font-medium text-xs">{formattedKey}</span>
-                <span className="text-on-surface font-semibold truncate max-w-[150px] text-xs">{val as React.ReactNode}</span>
-              </div>
-            );
-          })}
+        <div className="space-y-4 animate-fade-in text-body-sm">
+          <div className="p-4 rounded-xl border border-outline-variant/15 bg-surface-container-lowest space-y-3">
+            {Object.entries(nodeDetails || {}).map(([key, val]) => {
+              if (key === "muleSummary" || key === "pastRecords" || key === "transactions" || key === "mergedEntities") return null;
+              const formattedKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, " $1");
+              return (
+                <div
+                  key={key}
+                  className="flex justify-between items-center pb-2 last:pb-0 last:border-b-0 border-b border-outline-variant/10"
+                >
+                  <span className="text-on-surface-variant font-medium text-xs">{formattedKey}</span>
+                  <span className="text-on-surface font-semibold whitespace-normal break-all text-xs text-right">{val as React.ReactNode}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Audit Trail for Merged Entities */}
+          {Array.isArray(nodeDetails?.mergedEntities) && nodeDetails.mergedEntities.length > 0 && (
+            <div className="p-3 rounded-xl border border-primary/20 bg-primary/5 space-y-2">
+              <span className="text-[10px] font-bold font-label-mono text-primary uppercase tracking-wider block">
+                Entity Resolution Audit Log ({nodeDetails.mergedEntities.length})
+              </span>
+              {nodeDetails.mergedEntities.map((audit: any, i: number) => (
+                <div key={i} className="text-caption text-on-surface-variant space-y-0.5 border-t border-outline-variant/10 pt-1.5 first:border-t-0 first:pt-0">
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-on-surface">{audit.sourceIdentifier}</span>
+                    <span className="text-primary font-bold">{audit.confidenceScore}% match</span>
+                  </div>
+                  <p className="text-[10px] text-on-surface-variant/80">{audit.reason}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "timeline" && (
+        <div className="space-y-3 animate-fade-in">
+          <div className="flex justify-between items-center px-1">
+            <span className="text-[10px] font-label-mono uppercase tracking-wider text-on-surface-variant font-bold">
+              Sub-Tree Timeline ({((nodeDetails?.transactions as any[]) || []).length} Txns)
+            </span>
+            <span className="text-[9px] font-label-mono text-primary font-semibold">Oldest → Newest</span>
+          </div>
+
+          {(!nodeDetails?.transactions || (nodeDetails.transactions as any[]).length === 0) ? (
+            <div className="p-6 text-center text-xs text-on-surface-variant border border-dashed border-outline-variant/20 rounded-xl">
+              No individual sub-tree transactions recorded for this entity.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[420px] overflow-y-auto custom-scrollbar pr-1">
+              {(nodeDetails.transactions as any[]).map((tx: any, idx: number) => {
+                const isExpanded = expandedTxId === (tx.id || String(idx));
+                const isDebit = tx.direction === "OUTGOING";
+                return (
+                  <div
+                    key={tx.id || idx}
+                    className="p-3 bg-surface-container-lowest border border-outline-variant/15 rounded-xl transition-all hover:border-primary/40 space-y-2 cursor-pointer"
+                    onClick={() => setExpandedTxId(isExpanded ? null : (tx.id || String(idx)))}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-2">
+                        <span className={`material-symbols-outlined text-sm font-bold ${isDebit ? "text-risk-critical" : "text-risk-low"}`}>
+                          {isDebit ? "arrow_outward" : "south_west"}
+                        </span>
+                        <div>
+                          <span className="font-semibold text-xs text-on-surface block leading-tight">
+                            {isDebit ? `To: ${tx.receiver}` : `From: ${tx.sender}`}
+                          </span>
+                          <span className="text-[9px] font-label-mono text-on-surface-variant/80">
+                            {tx.timestamp}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className={`text-xs font-bold font-label-mono ${isDebit ? "text-risk-critical" : "text-risk-low"}`}>
+                          {isDebit ? "-" : "+"}{tx.amountFormatted || `₹${tx.amount}`}
+                        </span>
+                        <span className="text-[9px] block font-label-mono text-on-surface-variant font-semibold uppercase">
+                          {tx.mode || "TRANSFER"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Expanded Detail Panel */}
+                    {isExpanded && (
+                      <div className="pt-2 border-t border-outline-variant/10 text-xs space-y-1.5 animate-fade-in text-on-surface-variant">
+                        <div className="flex justify-between">
+                          <span className="font-medium">Ref / UTR:</span>
+                          <span className="font-label-mono text-on-surface font-semibold break-all">{tx.refId || tx.id}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-medium">UPI VPA:</span>
+                          <span className="font-label-mono text-on-surface font-semibold break-all">{tx.upiId || "N/A"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-medium">Narration:</span>
+                          <span className="text-on-surface font-medium break-all text-right">{tx.narration || "N/A"}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -247,35 +341,35 @@ export default function NodeInspector() {
           <div className="p-4 rounded-xl border border-outline-variant/15 bg-surface-container-lowest space-y-4 text-body-sm animate-fade-in">
             <div className="flex justify-between items-center gap-4 pb-3 border-b border-outline-variant/10">
               <span className="text-on-surface-variant font-medium text-xs shrink-0">Node ID</span>
-              <span className="text-on-surface font-semibold text-xs text-right truncate">{selectedNode.id}</span>
+              <span className="text-on-surface font-semibold text-xs text-right whitespace-normal break-all">{selectedNode.id}</span>
             </div>
             <div className="flex justify-between items-center gap-4 pb-3 border-b border-outline-variant/10">
               <span className="text-on-surface-variant font-medium text-xs shrink-0">Transaction ID</span>
-              <span className="text-on-surface font-semibold text-xs text-right truncate">{dynTxnId}</span>
+              <span className="text-on-surface font-semibold text-xs text-right whitespace-normal break-all">{dynTxnId}</span>
             </div>
             <div className="flex justify-between items-center gap-4 pb-3 border-b border-outline-variant/10">
               <span className="text-on-surface-variant font-medium text-xs shrink-0">Timestamp</span>
-              <span className="text-on-surface font-semibold text-xs text-right truncate">{dynDate} {dynTime}</span>
+              <span className="text-on-surface font-semibold text-xs text-right whitespace-normal break-all">{dynDate} {dynTime}</span>
             </div>
             <div className="flex justify-between items-center gap-4 pb-3 border-b border-outline-variant/10">
               <span className="text-on-surface-variant font-medium text-xs shrink-0">Amount</span>
-              <span className="text-on-surface font-semibold text-xs text-right text-risk-critical truncate">{dynAmount}</span>
+              <span className="text-on-surface font-semibold text-xs text-right text-risk-critical whitespace-normal break-all">{dynAmount}</span>
             </div>
             <div className="flex justify-between items-center gap-4 pb-3 border-b border-outline-variant/10">
               <span className="text-on-surface-variant font-medium text-xs shrink-0">Customer Name</span>
-              <span className="text-on-surface font-semibold text-xs text-right truncate">{dynCustomer}</span>
+              <span className="text-on-surface font-semibold text-xs text-right whitespace-normal break-all">{dynCustomer}</span>
             </div>
             <div className="flex justify-between items-center gap-4 pb-3 border-b border-outline-variant/10">
               <span className="text-on-surface-variant font-medium text-xs shrink-0">Receiver Name</span>
-              <span className="text-on-surface font-semibold text-xs text-right truncate">{dynReceiver}</span>
+              <span className="text-on-surface font-semibold text-xs text-right whitespace-normal break-all">{dynReceiver}</span>
             </div>
             <div className="flex justify-between items-center gap-4 pb-3 border-b border-outline-variant/10">
               <span className="text-on-surface-variant font-medium text-xs shrink-0">Location</span>
-              <span className="text-on-surface font-semibold text-xs text-right truncate">{dynLocation}</span>
+              <span className="text-on-surface font-semibold text-xs text-right whitespace-normal break-all">{dynLocation}</span>
             </div>
             <div className="flex justify-between items-center gap-4">
               <span className="text-on-surface-variant font-medium text-xs shrink-0">Category / Mode</span>
-              <span className="text-on-surface font-semibold text-xs text-right truncate">{dynMode}</span>
+              <span className="text-on-surface font-semibold text-xs text-right whitespace-normal break-all">{dynMode}</span>
             </div>
           </div>
         );

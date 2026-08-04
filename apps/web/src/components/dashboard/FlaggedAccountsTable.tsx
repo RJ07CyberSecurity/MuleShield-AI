@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ShieldAlert, ArrowUpDown, ChevronRight, Activity, HelpCircle, RefreshCw } from "lucide-react";
 import { apiClient } from "../../services/api-client";
 import { useInvestigationSocket } from "../../hooks/useInvestigationSocket";
-import { CURRENCY_SYMBOL } from "@/utils/currency";
+import { CURRENCY_SYMBOL, getCurrencySymbol } from "@/utils/currency";
 import { useUIStore } from "../../store/useUIStore";
 
 interface Factor {
@@ -233,7 +233,7 @@ export default function FlaggedAccountsTable({ ingestionId }: FlaggedAccountsTab
 
                   {/* Balance */}
                   <td className="p-4 text-right font-bold font-label-mono text-primary">
-                    {CURRENCY_SYMBOL}{acct.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {getCurrencySymbol(acct.currency)}{acct.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     <span className="text-[9px] font-normal text-on-surface-variant ml-1 font-label-mono uppercase">
                       {acct.currency}
                     </span>
@@ -284,7 +284,7 @@ export default function FlaggedAccountsTable({ ingestionId }: FlaggedAccountsTab
               <div className="flex justify-between items-center pt-2 border-t border-outline-variant/10">
                 <span className="text-on-surface-variant text-xs">Balance</span>
                 <span className="font-bold font-label-mono text-primary text-sm">
-                  {CURRENCY_SYMBOL}{acct.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {getCurrencySymbol(acct.currency)}{acct.balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   <span className="text-[9px] font-normal text-on-surface-variant ml-1 font-label-mono uppercase">
                     {acct.currency}
                   </span>

@@ -210,6 +210,7 @@ export default function VerifyPage() {
                   required
                   disabled={isLoading}
                   value={digit}
+                  readOnly={isLoading}
                   ref={(el) => {
                     if (el) inputRefs.current[index] = el;
                   }}

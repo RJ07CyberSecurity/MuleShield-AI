@@ -91,7 +91,7 @@ async def create_case(
     Creates a new compliance case visible to all authorised investigators.
     Broadcasts a case_created event to all connected WebSocket clients.
     """
-    owner_id = request.headers.get("x-user-id")
+    owner_id = claims.get("sub")
     
     # Prevent duplicate escalation if alert_id is provided
     if payload.alert_id:
@@ -277,7 +277,7 @@ async def get_case(
             alert_res = await session.execute(alert_stmt.order_by(Alert.created_at.desc()))
             alert = alert_res.scalars().first()
             if alert:
-                owner_id = request.headers.get("x-user-id")
+                owner_id = claims.get("sub")
                 case = Case(
                     id=uuid.uuid4(),
                     owner_id=owner_id,

@@ -32,20 +32,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Strict Security Requirement: Log out on direct URL navigation/tampering
-  // Client-side navigations (Next.js Link or router.push) have "rsc" or "next-router-prefetch" headers
-  const isDirectNavigation =
-    request.headers.get("accept")?.includes("text/html") &&
-    !request.headers.has("rsc") &&
-    !request.headers.has("next-router-prefetch");
-
-  if (isDirectNavigation) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("reason", "direct_access");
-    const response = NextResponse.redirect(loginUrl);
-    response.cookies.delete("muleshield_token");
-    return response;
-  }
+  // Removed overly strict direct navigation logout that prevented hard-refreshes
 
   return NextResponse.next();
 }

@@ -12,7 +12,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "b
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend", "services", "reporting-service")))
 
 # Mock dependencies / structures for testing
-from app.api.v1.ingestion import parse_csv
+from app.api.v1.parsers.csv_excel import CSVExcelParser
 from app.api.v1.reports import generate_mock_report
 
 
@@ -26,7 +26,8 @@ def test_csv_parser_valid_rows():
         "ACC-002,ACC-003,200.00,USD,2026-07-17T11:00:00Z,TRANSFER,SWIFT,TX-002\n"
     )
     
-    valid, invalid = parse_csv(csv_content.encode("utf-8"))
+    parser = CSVExcelParser(is_excel=False)
+    valid, invalid = parser.parse(csv_content.encode("utf-8"))
     
     assert len(valid) == 2
     assert len(invalid) == 0
@@ -45,7 +46,8 @@ def test_csv_parser_invalid_rows():
         "ACC-002,ACC-003,-5.00,USD,2026-07-17T11:00:00Z,TRANSFER,SWIFT,TX-002\n" # negative amount
     )
     
-    valid, invalid = parse_csv(csv_content.encode("utf-8"))
+    parser = CSVExcelParser(is_excel=False)
+    valid, invalid = parser.parse(csv_content.encode("utf-8"))
     
     assert len(valid) == 0
     assert len(invalid) == 2
@@ -59,8 +61,50 @@ def test_csv_parser_missing_headers():
     """
     csv_content = "sender_account,amount\nACC-001,50.00\n"
     with pytest.raises(ValueError) as exc:
-        parse_csv(csv_content.encode("utf-8"))
+        parser = CSVExcelParser(is_excel=False)
+        parser.parse(csv_content.encode("utf-8"))
     assert "Missing required columns" in str(exc.value)
+
+
+def test_verbatim_fidelity_multibank_formats():
+    """
+    Asserts byte-for-byte fidelity across different bank format styles:
+    - Bank A: 12-digit numeric (400123456789)
+    - Bank B: 5 letters + numbers (ABCDE12345678)
+    - Bank C: Alphanumeric with dashes (AC-2023-9981-XZ)
+    - Bank D: Leading zeros preserved (00045123)
+    - Masked: Masked format preserved (XXXX1234)
+    """
+    csv_content = (
+        "sender_account,receiver_account,amount,currency,timestamp,transaction_type,payment_channel,transaction_id,ifsc\n"
+        "400123456789,00045123,500.00,INR,2026-07-17T10:00:00Z,TRANSFER,ACH,TX-101,HDFC0001234\n"
+        "ABCDE12345678,AC-2023-9981-XZ,1200.50,INR,2026-07-17T11:00:00Z,TRANSFER,NEFT,TX-102,SBIN0005678\n"
+        "XXXX1234,00099881122,350.00,INR,2026-07-17T12:00:00Z,TRANSFER,UPI,TX-103,ICIC0009999\n"
+    )
+
+    parser = CSVExcelParser(is_excel=False)
+    valid, invalid = parser.parse(csv_content.encode("utf-8"))
+
+    assert len(valid) == 3
+    assert len(invalid) == 0
+
+    # Bank A -> Bank D (leading zeros preserved)
+    assert valid[0]["sender_account"] == "400123456789"
+    assert valid[0]["sender_account_raw"] == "400123456789"
+    assert valid[0]["receiver_account"] == "00045123"
+    assert valid[0]["receiver_account_raw"] == "00045123"
+
+    # Bank B -> Bank C (alphanumeric with dashes)
+    assert valid[1]["sender_account"] == "ABCDE12345678"
+    assert valid[1]["sender_account_raw"] == "ABCDE12345678"
+    assert valid[1]["receiver_account"] == "AC-2023-9981-XZ"
+    assert valid[1]["receiver_account_raw"] == "AC-2023-9981-XZ"
+
+    # Masked -> Bank D (leading zeros)
+    assert valid[2]["sender_account"] == "XXXX1234"
+    assert valid[2]["sender_account_raw"] == "XXXX1234"
+    assert valid[2]["receiver_account"] == "00099881122"
+    assert valid[2]["receiver_account_raw"] == "00099881122"
 
 
 def test_mock_report_compilation():

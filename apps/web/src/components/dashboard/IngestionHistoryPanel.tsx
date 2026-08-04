@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, FileText, ChevronRight, Clock, Database, ChevronDown, ChevronUp } from "lucide-react";
+import { RefreshCw, FileText, ChevronRight, Clock, Database, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { formatCurrency } from "../../utils/currency";
 import { apiClient } from "../../services/api-client";
 import { useAuthStore } from "../../store/useAuthStore";
@@ -40,6 +40,23 @@ export default function IngestionHistoryPanel({ activeIngestionId, onSelect }: I
       // silently fail
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (ingestionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to permanently delete this statement and all of its associated transactions?")) return;
+    
+    try {
+      const res = await apiClient.delete(`/api/v1/ingestion/${ingestionId}`);
+      if (res.success) {
+        if (activeIngestionId === ingestionId) {
+          onSelect(""); // Clear selection if the active one was deleted
+        }
+        await fetchList();
+      }
+    } catch {
+      // ignore
     }
   };
 
@@ -131,10 +148,10 @@ export default function IngestionHistoryPanel({ activeIngestionId, onSelect }: I
                   : "Unknown";
 
                 return (
-                  <button
+                  <div
                     key={item.ingestion_id}
                     onClick={() => onSelect(item.ingestion_id)}
-                    className={`w-full flex items-center justify-between px-5 py-3 text-left transition-all hover:bg-surface-container-high/40 group ${
+                    className={`w-full flex items-center justify-between px-5 py-3 text-left cursor-pointer transition-all hover:bg-surface-container-high/40 group ${
                       isActive ? "bg-primary/5 border-l-2 border-primary" : ""
                     }`}
                   >
@@ -171,9 +188,16 @@ export default function IngestionHistoryPanel({ activeIngestionId, onSelect }: I
                       }`}>
                         {item.status}
                       </span>
+                      <button
+                        onClick={(e) => handleDelete(item.ingestion_id, e)}
+                        className="p-1.5 ml-2 hover:bg-risk-high/20 rounded text-on-surface-variant hover:text-risk-high transition-colors"
+                        title="Delete uploaded statement"
+                      >
+                        <Trash2 size={14} />
+                      </button>
                       <ChevronRight size={12} className={`text-on-surface-variant group-hover:text-primary transition-colors ${isActive ? "text-primary" : ""}`} />
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

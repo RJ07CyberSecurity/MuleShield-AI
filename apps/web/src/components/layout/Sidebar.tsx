@@ -37,6 +37,7 @@ export default function Sidebar() {
         { name: "Alerts Queue", href: "/alerts", icon: "analytics" },
         { name: "Investigations", href: "/cases", icon: "security" },
         { name: "Graph Explorer", href: "/explorer", icon: "hub" },
+        { name: "Profile", href: "/customer-profile", icon: "account_circle" },
       ],
     },
     {
@@ -117,7 +118,7 @@ export default function Sidebar() {
           {/* Brand / Logo */}
           <div className="h-16 flex items-center justify-between px-5 border-b border-outline-variant/20 sticky top-0 bg-surface-container-low z-10">
             <Link href="/dashboard" className="flex items-center gap-3 overflow-hidden">
-              <span className="material-symbols-outlined text-primary font-bold text-3xl">shield</span>
+              <img src="/muleshield-logo.jpg" alt="MuleShield AI" className="w-8 h-8 object-contain rounded-lg shadow-[0_0_12px_rgba(6,182,212,0.4)] flex-shrink-0" />
               <span className={`font-headline-sm text-sm font-bold text-primary tracking-wider whitespace-nowrap animate-fade-in uppercase ${isCollapsed ? "md:hidden" : ""}`}>
                 MuleShield AI
               </span>

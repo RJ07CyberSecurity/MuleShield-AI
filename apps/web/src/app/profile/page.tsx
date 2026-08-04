@@ -127,28 +127,24 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-left">
       
       {/* Profile Header Card */}
-      <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+      <div className="p-6 rounded-2xl border border-outline-variant/30 bg-surface-container-low flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative overflow-hidden">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-primary/20 border-2 border-primary flex items-center justify-center text-primary font-bold text-xl relative overflow-hidden">
-            {(photoUrl || user?.avatar_url) ? (
-              <img src={photoUrl || user?.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-            ) : (
-              userInitials
-            )}
+          <div className="w-16 h-16 rounded-2xl bg-surface-container-high border-2 border-primary/40 flex items-center justify-center text-primary font-bold text-xl relative overflow-hidden shadow-lg">
+            <img src="/muleshield-logo.jpg" alt="MuleShield AI" className="w-full h-full object-contain p-1" />
             <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-risk-low border-2 border-surface-container-low rounded-full z-10"></span>
           </div>
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <h1 className="font-headline-sm text-lg font-bold text-on-surface">{userName}</h1>
-              <span className="px-2 py-0.5 bg-[#002a78]/30 border border-primary/20 text-primary text-[8px] font-bold rounded font-label-mono uppercase tracking-wider">
+              <h1 className="font-headline-sm text-xl font-bold text-on-surface">{userName}</h1>
+              <span className="px-2 py-0.5 bg-primary/10 border border-primary/20 text-primary text-[8px] font-bold rounded font-label-mono uppercase tracking-wider">
                 Role: {userRole.replace(/_/g, " ")}
               </span>
             </div>
             <p className="text-xs text-on-surface-variant font-medium">
-              {userEmail}
+              {userEmail} • <span className="text-primary font-semibold font-label-mono">MuleShield AI Investigator</span>
             </p>
           </div>
         </div>

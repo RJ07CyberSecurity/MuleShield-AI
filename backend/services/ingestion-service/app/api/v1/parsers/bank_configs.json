@@ -1,0 +1,21 @@
+{
+  "banks": {
+    "HDFC": {
+      "account_number_pattern": "^[0-9]{14}$",
+      "ifsc_pattern": "^HDFC[0-9A-Z]{7}$",
+      "upi_pattern": "^[a-zA-Z0-9.\\-_]+@[a-zA-Z]+$"
+    },
+    "SBI": {
+      "account_number_pattern": "^[0-9]{11}$",
+      "ifsc_pattern": "^SBIN[0-9A-Z]{7}$"
+    },
+    "ICICI": {
+      "account_number_pattern": "^[0-9]{12}$",
+      "ifsc_pattern": "^ICIC[0-9A-Z]{7}$"
+    },
+    "GENERIC": {
+      "account_number_pattern": "^[A-Za-z0-9\\-*_]{4,40}$",
+      "ifsc_pattern": "^[A-Z]{4}0[A-Z0-9]{6}$"
+    }
+  }
+}
