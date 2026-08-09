@@ -1,27 +1,39 @@
-# Multi-stage Dockerfile for FastAPI reporting-service service
-FROM python:3.11-slim AS builder
+# Stage 1: Build dependencies and package
+FROM python:3.13-slim AS builder
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir poetry
+# Install system dependencies & Poetry
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && pip install --no-cache-dir poetry \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml poetry.lock* README.md ./
+# Copy the shared package and reporting service package into builder
+COPY shared/ shared/
+COPY services/reporting-service/ services/reporting-service/
 
-# Configure poetry to not create virtualenvs in container
+# Build and install dependencies for the service
+WORKDIR /app/services/reporting-service
 RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi --no-root || true
+    && poetry install --no-interaction --no-ansi --no-root \
+    && pip install asyncpg python-docx reportlab
 
-COPY . .
+# Stage 2: Minimal runtime image
+FROM python:3.13-slim AS runner
 
-FROM python:3.11-slim AS runner
+WORKDIR /app/services/reporting-service
 
-WORKDIR /app
-
-# Copy python dependencies
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+# Copy installed dependencies and executables from builder
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /app /app
 
 EXPOSE 8000
 
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Execute app via uvicorn
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+

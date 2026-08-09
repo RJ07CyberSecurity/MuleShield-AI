@@ -70,8 +70,23 @@ services:
     container_name: muleshield-gateway
     ports:
       - "${API_GATEWAY_PORT:-8000}:8000"
+    environment:
+      - USE_SQLITE=false
+      - POSTGRES_HOST=postgres
+      - REDIS_URL=redis://redis:6379/0
+      - AUTH_SERVICE_URL=http://auth-service:8000
+      - CUSTOMER_SERVICE_URL=http://customer-service:8000
+      - ACCOUNT_SERVICE_URL=http://account-service:8000
+      - INGESTION_SERVICE_URL=http://ingestion-service:8000
+      - DETECTION_ENGINE_URL=http://detection-engine:8000
+      - REPORTING_SERVICE_URL=http://reporting-service:8000
     depends_on:
       - auth-service
+      - customer-service
+      - account-service
+      - ingestion-service
+      - detection-engine
+      - reporting-service
     networks:
       - muleshield-network
 
@@ -82,6 +97,10 @@ services:
     container_name: muleshield-auth-service
     ports:
       - "${AUTH_SERVICE_PORT:-8001}:8000"
+    environment:
+      - USE_SQLITE=false
+      - POSTGRES_HOST=postgres
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       - postgres
       - redis
@@ -95,6 +114,9 @@ services:
     container_name: muleshield-customer-service
     ports:
       - "8002:8000"
+    environment:
+      - USE_SQLITE=false
+      - POSTGRES_HOST=postgres
     depends_on:
       - postgres
     networks:
@@ -107,6 +129,9 @@ services:
     container_name: muleshield-account-service
     ports:
       - "8003:8000"
+    environment:
+      - USE_SQLITE=false
+      - POSTGRES_HOST=postgres
     depends_on:
       - postgres
     networks:
@@ -120,6 +145,8 @@ services:
     ports:
       - "8004:8000"
     environment:
+      - USE_SQLITE=false
+      - POSTGRES_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
       - DETECT_ENGINE_URL=http://detection-engine:8000
     depends_on:
@@ -136,6 +163,8 @@ services:
     ports:
       - "8005:8000"
     environment:
+      - USE_SQLITE=false
+      - POSTGRES_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
       - NEO4J_URI=bolt://neo4j:7687
     depends_on:
@@ -152,6 +181,9 @@ services:
     container_name: muleshield-reporting-service
     ports:
       - "8006:8000"
+    environment:
+      - USE_SQLITE=false
+      - POSTGRES_HOST=postgres
     depends_on:
       - postgres
     networks:
@@ -164,6 +196,8 @@ services:
     container_name: muleshield-celery-worker
     command: celery -A shared.celery:celery_app worker --loglevel=info
     environment:
+      - USE_SQLITE=false
+      - POSTGRES_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
       - NEO4J_URI=bolt://neo4j:7687
     depends_on:
