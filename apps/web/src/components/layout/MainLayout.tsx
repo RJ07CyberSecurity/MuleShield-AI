@@ -31,6 +31,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const isAuthOrLanding =
     pathname === "/" ||
     pathname.startsWith("/login") ||
+    pathname.startsWith("/signup") ||
     pathname.startsWith("/forgot-password") ||
     pathname.startsWith("/reset-password") ||
     pathname.startsWith("/locked");
@@ -39,6 +40,13 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // Protect private routes: redirect to /login when unauthenticated
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated && !isAuthOrLanding) {
+      router.push("/login");
+    }
+  }, [isLoading, isAuthenticated, isAuthOrLanding, router]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -52,7 +60,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     if (saved) {
       try {
         setRecentSearches(JSON.parse(saved));
-      } catch (e) {}
+      } catch (e) { }
     }
   }, []);
 
@@ -86,6 +94,41 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Filter global search results across Alerts, Cases, and Accounts
+  const searchResults = searchQuery.trim()
+    ? [
+      ...alerts
+        .filter(
+          (a) =>
+            a.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            a.sourceAccount.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            a.entityDetails?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        .map((a) => ({
+          id: a.id,
+          title: `Alert: ${a.sourceAccount}`,
+          subtitle: a.entityDetails?.name || "Unknown Entity",
+          type: "Alert",
+          url: `/alerts?id=${a.id}`,
+        })),
+      ...cases
+        .filter(
+          (c) =>
+            c.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            c.description.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        .map((c) => ({
+          id: c.id,
+          title: `Case: ${c.title}`,
+          subtitle: c.description,
+          type: "Case",
+          url: `/cases?id=${c.id}`,
+        })),
+    ]
+    : [];
+
+  // If on login, signup, or landing pages, render page content directly full-screen
   if (isAuthOrLanding) {
     return <>{children}</>;
   }
@@ -111,24 +154,24 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const query = searchQuery.toLowerCase().trim();
   const matchedAlerts = query
     ? alerts
-        .filter(
-          (a) =>
-            a.id.toLowerCase().includes(query) ||
-            a.sourceAccount.toLowerCase().includes(query) ||
-            (a.entityDetails?.name || "").toLowerCase().includes(query)
-        )
-        .slice(0, 3)
+      .filter(
+        (a) =>
+          a.id.toLowerCase().includes(query) ||
+          a.sourceAccount.toLowerCase().includes(query) ||
+          (a.entityDetails?.name || "").toLowerCase().includes(query)
+      )
+      .slice(0, 3)
     : [];
 
   const matchedCases = query
     ? cases
-        .filter(
-          (c) =>
-            c.id.toLowerCase().includes(query) ||
-            c.title.toLowerCase().includes(query) ||
-            c.description.toLowerCase().includes(query)
-        )
-        .slice(0, 3)
+      .filter(
+        (c) =>
+          c.id.toLowerCase().includes(query) ||
+          c.title.toLowerCase().includes(query) ||
+          c.description.toLowerCase().includes(query)
+      )
+      .slice(0, 3)
     : [];
 
   const highlightMatch = (text: string, q: string) => {
@@ -150,15 +193,14 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   };
 
   return (
-    <div className="min-h-screen bg-surface text-on-surface">
+    <div suppressHydrationWarning className="min-h-screen bg-surface text-on-surface">
       {/* Sidebar navigation */}
       <Sidebar />
 
       {/* Main Content Area */}
       <div
-        className={`transition-all duration-300 min-h-screen flex flex-col ${
-          sidebarCollapsed ? "md:pl-20" : "pl-0 md:pl-64"
-        }`}
+        className={`transition-all duration-300 min-h-screen flex flex-col ${sidebarCollapsed ? "md:pl-20" : "pl-0 md:pl-64"
+          }`}
       >
         {/* Top Header Bar */}
         <header className="h-16 border-b border-outline-variant/20 px-6 flex items-center justify-between bg-surface-container-low/80 backdrop-blur-md sticky top-0 z-30">
@@ -172,41 +214,37 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             </button>
             <nav className="hidden lg:flex gap-6">
               <Link
-                className={`font-label-mono text-xs uppercase tracking-wider transition-colors hover:text-on-surface ${
-                  pathname.startsWith("/dashboard")
+                className={`font-label-mono text-xs uppercase tracking-wider transition-colors hover:text-on-surface ${pathname.startsWith("/dashboard")
                     ? "text-primary border-b border-primary pb-1"
                     : "text-on-surface-variant"
-                }`}
+                  }`}
                 href="/dashboard"
               >
                 Executive Suite
               </Link>
               <Link
-                className={`font-label-mono text-xs uppercase tracking-wider transition-colors hover:text-on-surface ${
-                  pathname.startsWith("/alerts")
+                className={`font-label-mono text-xs uppercase tracking-wider transition-colors hover:text-on-surface ${pathname.startsWith("/alerts")
                     ? "text-primary border-b border-primary pb-1"
                     : "text-on-surface-variant"
-                }`}
+                  }`}
                 href="/alerts"
               >
                 Real-Time Queue
               </Link>
               <Link
-                className={`font-label-mono text-xs uppercase tracking-wider transition-colors hover:text-on-surface ${
-                  pathname.startsWith("/cases")
+                className={`font-label-mono text-xs uppercase tracking-wider transition-colors hover:text-on-surface ${pathname.startsWith("/cases")
                     ? "text-primary border-b border-primary pb-1"
                     : "text-on-surface-variant"
-                }`}
+                  }`}
                 href="/cases"
               >
                 Case registry
               </Link>
               <Link
-                className={`font-label-mono text-xs uppercase tracking-wider transition-colors hover:text-on-surface ${
-                  pathname.startsWith("/explorer")
+                className={`font-label-mono text-xs uppercase tracking-wider transition-colors hover:text-on-surface ${pathname.startsWith("/explorer")
                     ? "text-primary border-b border-primary pb-1"
                     : "text-on-surface-variant"
-                }`}
+                  }`}
                 href="/explorer"
               >
                 Network graph
@@ -369,6 +407,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
             {/* Logout button */}
             <button
+              suppressHydrationWarning
               onClick={logout}
               title="Logout"
               className="material-symbols-outlined text-on-surface-variant hover:text-risk-high p-2 rounded-xl hover:bg-risk-high/10 transition-colors"
@@ -377,15 +416,15 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             </button>
 
             {/* Profile avatar with real user initials */}
-            <button
-              onClick={() => router.push("/profile")}
-              title={user ? `${user.first_name} ${user.last_name}` : "Profile"}
-              className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 hover:border-primary flex items-center justify-center text-primary font-bold text-xs transition-all hover:scale-105"
+            <div
+              suppressHydrationWarning
+              title={user ? `${user.first_name} ${user.last_name}` : "User"}
+              className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center text-primary font-bold text-xs shadow"
             >
               {user
                 ? `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`
                 : <span className="material-symbols-outlined text-sm">account_circle</span>}
-            </button>
+            </div>
           </div>
         </header>
 

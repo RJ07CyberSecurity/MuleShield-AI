@@ -47,9 +47,20 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const [isMfaStep, setIsMfaStep] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  const [isResendingMfa, setIsResendingMfa] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [mfaSuccessMessage, setMfaSuccessMessage] = useState<string | null>(null);
+
+  // Resend cooldown timer effect
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(prev => prev - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   // Clear states on method switch
   useEffect(() => {
@@ -128,6 +139,32 @@ export default function LoginPage() {
     }
   };
 
+  const handleResendMfaCode = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (resendCooldown > 0 || isResendingMfa) return;
+    setError(null);
+    setMfaSuccessMessage(null);
+    setIsResendingMfa(true);
+
+    try {
+      const response = await apiClient.post<any>("/api/v1/auth/login", {
+        email,
+        password,
+      });
+
+      if (response?.success && response.data.is_mfa_required) {
+        setMfaSuccessMessage(`A new verification code was sent to ${email}`);
+        setResendCooldown(30);
+      } else {
+        setError(response?.message || "Failed to resend verification code.");
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to resend code. Please try logging in again.");
+    } finally {
+      setIsResendingMfa(false);
+    }
+  };
+
   const handleAdminSendOtp = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!adminPhoneNumber.trim()) {
@@ -145,8 +182,8 @@ export default function LoginPage() {
           formattedPhone = "+" + formattedPhone;
         }
       }
-      
-    const session = await sendPhoneOtp(formattedPhone);
+
+      const session = await sendPhoneOtp(formattedPhone);
       setAdminPhoneSession(session);
       setAdminPhoneSent(true);
       if (session.provider === "backend" && session.devCode) {
@@ -158,7 +195,7 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(
         err.message ||
-          "Failed to send verification code. Please make sure the number format is valid."
+        "Failed to send verification code. Please make sure the number format is valid."
       );
     } finally {
       setIsLoading(false);
@@ -185,7 +222,7 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(
         err.message ||
-          `${ssoType === "google" ? "Google" : "GitHub"} Sign-In canceled or failed.`
+        `${ssoType === "google" ? "Google" : "GitHub"} Sign-In canceled or failed.`
       );
     } finally {
       setIsLoading(false);
@@ -238,7 +275,7 @@ export default function LoginPage() {
           formattedPhone = "+" + formattedPhone;
         }
       }
-      
+
       const session = await sendPhoneOtp(formattedPhone);
       setPhoneSession(session);
       setOtpSent(true);
@@ -248,7 +285,7 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(
         err.message ||
-          "Failed to send verification code. Please make sure the number format is valid (e.g. +14155552671)."
+        "Failed to send verification code. Please make sure the number format is valid (e.g. +14155552671)."
       );
     } finally {
       setIsLoading(false);
@@ -319,8 +356,8 @@ export default function LoginPage() {
       <div className="w-full md:w-[45%] bg-[#090b12] border-r border-outline-variant/10 p-8 md:p-16 flex flex-col justify-between relative overflow-hidden">
         <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="flex items-center gap-2 select-none">
-          <span className="material-symbols-outlined text-primary font-bold text-3xl">shield</span>
+        <div className="flex items-center gap-3 select-none">
+          <img src="/muleshield-logo.jpg" alt="MuleShield AI" className="w-10 h-10 object-contain rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.4)] flex-shrink-0" />
           <span className="font-headline-sm text-headline-sm font-bold text-on-surface tracking-tight uppercase">
             MuleShield AI
           </span>
@@ -397,11 +434,10 @@ export default function LoginPage() {
                 disabled={isLoading}
                 suppressHydrationWarning
                 onClick={() => setLoginMethod(method)}
-                className={`flex-1 pb-3 text-xs font-label-mono uppercase tracking-wider font-bold border-b-2 transition-all ${
-                  loginMethod === method
-                    ? "border-primary text-primary"
-                    : "border-transparent text-on-surface-variant hover:text-on-surface disabled:opacity-50"
-                }`}
+                className={`flex-1 pb-3 text-xs font-label-mono uppercase tracking-wider font-bold border-b-2 transition-all ${loginMethod === method
+                  ? "border-primary text-primary"
+                  : "border-transparent text-on-surface-variant hover:text-on-surface disabled:opacity-50"
+                  }`}
               >
                 {method === "direct" ? "Direct Login" : method === "email" ? "Firebase Email" : "Phone OTP"}
               </button>
@@ -417,7 +453,13 @@ export default function LoginPage() {
                     {error}
                   </div>
                 )}
-                
+                {mfaSuccessMessage && (
+                  <div className="p-4 bg-primary/10 border border-primary/30 rounded-xl text-primary text-xs flex items-center gap-2">
+                    <span className="material-symbols-outlined text-base">check_circle</span>
+                    <span>{mfaSuccessMessage}</span>
+                  </div>
+                )}
+
                 <div className="space-y-4">
                   <div className="relative">
                     <label className="text-caption text-on-surface-variant font-medium block mb-1">
@@ -440,7 +482,7 @@ export default function LoginPage() {
                     An email code was sent to {email}. It will expire in 5 minutes.
                   </p>
                 </div>
-                
+
                 <button
                   type="submit"
                   disabled={isLoading || mfaCode.length !== 6}
@@ -449,105 +491,126 @@ export default function LoginPage() {
                 >
                   {isLoading ? "Verifying..." : "Verify Code"}
                 </button>
-                
-                <div className="text-center">
+
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <button
+                    type="button"
+                    disabled={isResendingMfa || resendCooldown > 0}
+                    onClick={handleResendMfaCode}
+                    className="text-primary font-bold hover:underline disabled:opacity-50 disabled:no-underline flex items-center gap-1.5"
+                  >
+                    {isResendingMfa ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+                        <span>Resending...</span>
+                      </>
+                    ) : resendCooldown > 0 ? (
+                      <span>Resend Code ({resendCooldown}s)</span>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-sm">refresh</span>
+                        <span>Resend Code</span>
+                      </>
+                    )}
+                  </button>
+
                   <button
                     type="button"
                     suppressHydrationWarning
-                    onClick={() => { setIsMfaStep(false); setMfaCode(""); }}
-                    className="text-xs text-primary hover:underline"
+                    onClick={() => { setIsMfaStep(false); setMfaCode(""); setError(null); setMfaSuccessMessage(null); }}
+                    className="text-on-surface-variant hover:text-on-surface hover:underline"
                   >
                     Back to Login
                   </button>
                 </div>
               </form>
             ) : (
-            <form onSubmit={handleDirectLogin} className="space-y-6" suppressHydrationWarning>
-              {error && (
-                <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
-                  {error}
-                </div>
-              )}
-              <div className="space-y-2">
-                <label className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
-                  Work Email Address
-                </label>
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">
-                    mail
-                  </span>
-                  <input
-                    type="email"
-                    required
-                    disabled={isLoading}
-                    suppressHydrationWarning
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="analyst@muleshield.ai"
-                    className="w-full bg-[#0c0e17] border border-outline-variant/30 rounded-xl px-4 py-3.5 pr-12 text-body-sm text-on-surface focus:outline-none focus:border-primary/50 disabled:opacity-50"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
+              <form onSubmit={handleDirectLogin} className="space-y-6" suppressHydrationWarning>
+                {error && (
+                  <div className="p-4 bg-[#2a1215] border border-[#f5c2c7]/20 rounded-xl text-[#ea868f] text-xs">
+                    {error}
+                  </div>
+                )}
+                <div className="space-y-2">
                   <label className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
-                    System Password
+                    Work Email Address
                   </label>
-                  <Link
-                    href="/forgot-password"
-                    className="font-label-mono text-[9px] text-primary hover:underline uppercase tracking-wider"
-                  >
-                    Forgot Password?
-                  </Link>
+                  <div className="relative">
+                    <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">
+                      mail
+                    </span>
+                    <input
+                      type="email"
+                      required
+                      disabled={isLoading}
+                      suppressHydrationWarning
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="analyst@muleshield.ai"
+                      className="w-full bg-[#0c0e17] border border-outline-variant/30 rounded-xl px-4 py-3.5 pr-12 text-body-sm text-on-surface focus:outline-none focus:border-primary/50 disabled:opacity-50"
+                    />
+                  </div>
                 </div>
-                <div className="relative">
-                  <button
-                    type="button"
-                    disabled={isLoading}
-                    suppressHydrationWarning
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base hover:text-primary transition-colors disabled:opacity-50"
-                  >
-                    {showPassword ? "visibility_off" : "visibility"}
-                  </button>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    required
-                    disabled={isLoading}
-                    suppressHydrationWarning
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full bg-[#0c0e17] border border-outline-variant/30 rounded-xl px-4 py-3.5 pr-12 text-body-sm text-on-surface focus:outline-none focus:border-primary/50 disabled:opacity-50"
-                  />
-                </div>
-              </div>
 
-              <div className="flex items-center gap-3 select-none">
-                <input
-                  type="checkbox"
-                  id="remember"
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="font-label-mono text-[10px] text-on-surface-variant uppercase font-bold tracking-wider">
+                      System Password
+                    </label>
+                    <Link
+                      href="/forgot-password"
+                      className="font-label-mono text-[9px] text-primary hover:underline uppercase tracking-wider"
+                    >
+                      Forgot Password?
+                    </Link>
+                  </div>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      suppressHydrationWarning
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant text-base hover:text-primary transition-colors disabled:opacity-50"
+                    >
+                      {showPassword ? "visibility_off" : "visibility"}
+                    </button>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      required
+                      disabled={isLoading}
+                      suppressHydrationWarning
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full bg-[#0c0e17] border border-outline-variant/30 rounded-xl px-4 py-3.5 pr-12 text-body-sm text-on-surface focus:outline-none focus:border-primary/50 disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 select-none">
+                  <input
+                    type="checkbox"
+                    id="remember"
+                    disabled={isLoading}
+                    suppressHydrationWarning
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-outline-variant/30 bg-[#0c0e17] text-primary focus:ring-0 cursor-pointer disabled:opacity-50"
+                  />
+                  <label htmlFor="remember" className="text-body-sm text-on-surface-variant cursor-pointer">
+                    Maintain session for 12 hours
+                  </label>
+                </div>
+
+                <button
+                  type="submit"
                   disabled={isLoading}
                   suppressHydrationWarning
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-outline-variant/30 bg-[#0c0e17] text-primary focus:ring-0 cursor-pointer disabled:opacity-50"
-                />
-                <label htmlFor="remember" className="text-body-sm text-on-surface-variant cursor-pointer">
-                  Maintain session for 12 hours
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                suppressHydrationWarning
-                className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isLoading ? "Signing In..." : "Sign In"}
-              </button>
-            </form>
+                  className="w-full py-4 rounded-xl bg-[#2563eb] text-white font-bold text-body-sm hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isLoading ? "Signing In..." : "Sign In"}
+                </button>
+              </form>
             )
           )}
 
@@ -707,8 +770,8 @@ export default function LoginPage() {
                 {isLoading
                   ? "Processing..."
                   : otpSent
-                  ? "Verify OTP Code"
-                  : "Send Verification Code"}
+                    ? "Verify OTP Code"
+                    : "Send Verification Code"}
               </button>
             </form>
           )}

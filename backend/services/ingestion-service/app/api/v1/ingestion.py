@@ -380,23 +380,19 @@ async def get_ingestion_summary(
     owner_id = request.headers.get("x-user-id") or "0882-MULE"
 
     try:
-        # Support compound ingestion IDs (e.g. id1_id2)
-        ingestion_ids = ingestion_id.split("_") if "_" in ingestion_id else [ingestion_id]
+        ing_ids = [ingestion_id]
+        if "_" in ingestion_id:
+            ing_ids.extend(ingestion_id.split("_"))
 
-        # 1. Fetch transactions count & aggregate values
         tx_stmt = select(Transaction).where(
-            Transaction.ingestion_id.in_(ingestion_ids)
+            or_(
+                Transaction.ingestion_id == ingestion_id,
+                Transaction.ingestion_id.in_(ing_ids),
+                Transaction.ingestion_id.like(f"%{ingestion_id}%")
+            )
         )
-        if owner_id:
-            tx_stmt_owner = tx_stmt.where(Transaction.owner_id == owner_id)
-            res = await db.execute(tx_stmt_owner)
-            txs = list(res.scalars().all())
-            if not txs:
-                res = await db.execute(tx_stmt)
-                txs = list(res.scalars().all())
-        else:
-            res = await db.execute(tx_stmt)
-            txs = list(res.scalars().all())
+        res = await db.execute(tx_stmt)
+        txs = list(res.scalars().all())
             
         unique_accts = set()
         total_volume = 0.0

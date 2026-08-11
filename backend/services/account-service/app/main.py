@@ -31,16 +31,13 @@ async def lifespan(app: FastAPI):
             pool_size=settings.POSTGRES_POOL_SIZE,
             max_overflow=settings.POSTGRES_MAX_OVERFLOW
         )
-        if settings.USE_SQLITE:
-            from shared.database import Base
-            import app.models.account
-            import app.models.alert
-            async with db_manager._engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info("SQLite database tables verified and created")
-            # Trigger seeding
-            # await seed_account_data()
-        else:
+        from shared.database import Base
+        import app.models.account
+        import app.models.alert
+        async with db_manager._engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables verified and created in Account Service")
+        if not settings.USE_SQLITE:
             logger.info("Connection pool successfully established")
     except Exception as exc:
         logger.critical("PostgreSQL initialization failed, aborting startup", error=str(exc))

@@ -7,6 +7,11 @@ import ThemeProvider from "../components/providers/ThemeProvider";
 export const metadata: Metadata = {
   title: "MuleShield AI | Investigative Suite",
   description: "Forensic intelligence for financial crime teams.",
+  icons: {
+    icon: "/muleshield-logo.jpg",
+    shortcut: "/muleshield-logo.jpg",
+    apple: "/muleshield-logo.jpg",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

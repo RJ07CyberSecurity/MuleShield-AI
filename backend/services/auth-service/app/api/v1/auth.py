@@ -44,7 +44,8 @@ async def register(
         password_raw=payload.password,
         first_name=payload.first_name,
         last_name=payload.last_name,
-        role=payload.role
+        role=payload.role,
+        phone_number=payload.phone_number
     )
     # Commit changes (flush occurred inside repo, commit makes it permanent in transactional database)
     await service.repository.session.commit()

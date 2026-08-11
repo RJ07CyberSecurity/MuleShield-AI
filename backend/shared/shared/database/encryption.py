@@ -22,8 +22,15 @@ class EncryptedString(TypeDecorator):
     SQLAlchemy custom type for encrypting data at rest.
     Values are encrypted before saving to the DB and decrypted when reading.
     """
-    impl = Text
+    impl = String
     cache_ok = True
+
+    def __init__(self, length=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if length is not None:
+            self.impl = String(length)
+        else:
+            self.impl = Text()
 
     def process_bind_param(self, value: Optional[str], dialect: Any) -> Optional[str]:
         if value is None:

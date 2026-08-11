@@ -29,13 +29,12 @@ async def lifespan(app: FastAPI):
             pool_size=settings.POSTGRES_POOL_SIZE,
             max_overflow=settings.POSTGRES_MAX_OVERFLOW
         )
-        if settings.USE_SQLITE:
-            from shared.database import Base
-            from shared.database.transaction import Transaction
-            async with db_manager._engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info("SQLite database tables verified and created in Ingestion Service")
-        else:
+        from shared.database import Base
+        from shared.database.transaction import Transaction
+        async with db_manager._engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables verified and created in Ingestion Service")
+        if not settings.USE_SQLITE:
             logger.info("Connection pool successfully established in Ingestion Service")
     except Exception as exc:
         logger.critical("Database initialization failed, aborting Ingestion Service startup", error=str(exc))

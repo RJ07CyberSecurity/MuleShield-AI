@@ -35,6 +35,9 @@ export default function IngestionHistoryPanel({ activeIngestionId, onSelect }: I
       const res = await apiClient.get<any>(`/api/v1/ingestion/list${uploaderParam}`);
       if (res && res.success && Array.isArray(res.data)) {
         setItems(res.data);
+        if (res.data.length > 0 && !activeIngestionId) {
+          onSelect(res.data[0].ingestion_id);
+        }
       }
     } catch {
       // silently fail

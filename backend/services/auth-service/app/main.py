@@ -98,7 +98,28 @@ async def seed_default_rbac(session: AsyncSession) -> None:
             new_user.roles.append(role_obj)
         session.add(new_user)
         await session.flush()
-        logger.info("Default investigator user seeded successfully.")
+        # 4. Seed default admin user
+        result_admin = await session.execute(select(User).where(User.email == "rudrajoshi2586@gmail.com"))
+        admin_user = result_admin.scalars().first()
+        if not admin_user:
+            from shared.authentication import PasswordHasher
+            hashed_pass = PasswordHasher.hash_password("Rudra@#$%1565")
+            admin_role_res = await session.execute(select(Role).where(Role.name == "administrator"))
+            admin_role_obj = admin_role_res.scalars().first()
+            
+            new_admin = User(
+                email="rudrajoshi2586@gmail.com",
+                hashed_password=hashed_pass,
+                first_name="Rudra",
+                last_name="Joshi",
+                is_active=True,
+                is_mfa_enabled=False
+            )
+            if admin_role_obj:
+                new_admin.roles.append(admin_role_obj)
+            session.add(new_admin)
+            await session.flush()
+            logger.info("Default administrator user seeded successfully.")
 
 
 @asynccontextmanager
@@ -111,15 +132,14 @@ async def lifespan(app: FastAPI):
             max_overflow=settings.POSTGRES_MAX_OVERFLOW
         )
         
-        if settings.USE_SQLITE:
-            # Create all database tables dynamically on startup
-            from shared.database import Base
-            # Import models to ensure they are registered on the Base metadata
-            import app.models.auth
-            async with db_manager._engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info("SQLite database tables verified and created")
-        else:
+        # Create all database tables dynamically on startup (PostgreSQL & SQLite)
+        from shared.database import Base
+        import app.models.auth
+        async with db_manager._engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables verified and created")
+
+        if not settings.USE_SQLITE:
             mongo_manager.init(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB_NAME)
             redis_manager.init(redis_url=settings.REDIS_URL)
             neo4j_manager.init(
