@@ -29,6 +29,14 @@ export default function Sidebar() {
     return null;
   }
 
+  const isAdmin = Boolean(
+    user?.roles?.some((r) =>
+      ["administrator", "admin"].includes(
+        typeof r === "string" ? r.toLowerCase() : (r as any)?.name?.toLowerCase()
+      )
+    )
+  );
+
   const sections: MenuSection[] = [
     {
       title: "Core Workspaces",
@@ -51,7 +59,7 @@ export default function Sidebar() {
     {
       title: "System & Management",
       items: [
-        ...(user?.roles?.includes("administrator")
+        ...(isAdmin
           ? [{ name: "Admin Console", href: "/admin", icon: "admin_panel_settings" }]
           : []),
         { name: "User Profile", href: "/profile", icon: "account_box" },

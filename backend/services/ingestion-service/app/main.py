@@ -29,11 +29,18 @@ async def lifespan(app: FastAPI):
             pool_size=settings.POSTGRES_POOL_SIZE,
             max_overflow=settings.POSTGRES_MAX_OVERFLOW
         )
-        from shared.database import Base
-        from shared.database.transaction import Transaction
+        from shared.database import Base, Transaction, Statement, IngestionAuditLog
         async with db_manager._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables verified and created in Ingestion Service")
+        
+        # Run corrective migration and data backfill
+        from app.migration_fix_statements import run_statement_migration
+        sessionmaker = db_manager.get_sessionmaker()
+        if sessionmaker:
+            async with sessionmaker() as session:
+                await run_statement_migration(session)
+
+        logger.info("Database tables verified, created, and migrated in Ingestion Service")
         if not settings.USE_SQLITE:
             logger.info("Connection pool successfully established in Ingestion Service")
     except Exception as exc:

@@ -1,5 +1,5 @@
 import { ConfirmationResult, RecaptchaVerifier } from "firebase/auth";
-import { createRecaptchaVerifier, sendOtpToPhone, clearRecaptchaVerifier } from "./firebase";
+import { createRecaptchaVerifier, sendOtpToPhone } from "./firebase";
 import { apiClient } from "./api-client";
 
 export type PhoneOtpSession =

@@ -27,9 +27,7 @@ export function middleware(request: NextRequest) {
     request.headers.get("Authorization")?.replace("Bearer ", "");
 
   if (!token) {
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("from", pathname);
-    return NextResponse.redirect(loginUrl);
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   // Removed overly strict direct navigation logout that prevented hard-refreshes

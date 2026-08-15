@@ -9,7 +9,7 @@ import { apiClient } from "../../services/api-client";
 function storeAuthTokens(access_token: string, refresh_token: string) {
   localStorage.setItem("token", access_token);
   localStorage.setItem("refresh_token", refresh_token);
-  document.cookie = `muleshield_token=${access_token}; path=/; max-age=900; SameSite=Strict`;
+  document.cookie = `muleshield_token=${access_token}; path=/; max-age=3600; SameSite=Strict`;
 }
 
 export default function SignupPage() {

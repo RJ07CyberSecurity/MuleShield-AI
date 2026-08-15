@@ -134,13 +134,13 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
 
       setTimeout(() => {
         if (response.success && response.data.ingestion_id) {
+          setIngestionResult(response.data);
           if (response.data.valid_count === 0) {
             // All rows already exist in DB — show informative duplicate screen
             setDuplicateCount(response.data.invalid_count ?? 0);
             setUploadStatus("duplicate");
             addToast("Statement already ingested — all transactions exist in the system.", "info");
           } else {
-            setIngestionResult(response.data);
             setUploadStatus("preview");
             addToast("Forensic Statement parsed and validated successfully.", "success");
           }
@@ -460,7 +460,13 @@ export default function AccountDataUploader({ onClose, onSuccess }: AccountDataU
                 Try Another File
               </button>
               <button
-                onClick={onClose}
+                onClick={() => {
+                  const targetId = ingestionResult?.ingestion_id;
+                  onClose();
+                  if (targetId) {
+                    onSuccess(targetId);
+                  }
+                }}
                 className="px-6 py-2.5 bg-primary hover:bg-primary-fixed text-on-primary text-xs font-bold rounded-xl shadow-lg transition-all flex items-center gap-2"
               >
                 View History

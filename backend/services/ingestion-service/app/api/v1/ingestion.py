@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func, or_, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
-from shared.database import get_db_session, Base, Transaction, Account, Alert, Customer, KYCRecord
+from shared.database import get_db_session, Base, Transaction, Account, Alert, Customer, KYCRecord, Statement, IngestionAuditLog
 from shared.schemas import ResponseEnvelope
 
 logger = structlog.get_logger(__name__)
@@ -48,6 +48,7 @@ async def upload_statement(
     request: Request,
     file: UploadFile = File(...),
     uploader_id: str | None = Form(None),
+    project_id: str | None = Form(None),
     db: AsyncSession = Depends(get_db_session)
 ) -> ResponseEnvelope[dict]:
     """
@@ -55,9 +56,12 @@ async def upload_statement(
     """
     logger.info("Received statement file upload request", filename=file.filename)
     owner_id = request.headers.get("x-user-id")
+    hdr_project_id = request.headers.get("x-project-id")
+    effective_project_id = project_id or hdr_project_id or "default"
     
     # Read size check
     contents = await file.read()
+    file_hash = hashlib.sha256(contents).hexdigest()
     
     # DEBUG: Save uploaded file to inspect
     with open("E:/MuleShieldAI/fixtures/last_uploaded.pdf", "wb") as f:
@@ -111,28 +115,38 @@ async def upload_statement(
     fingerprints = [r["fingerprint"] for r in valid_rows]
     
     # Query database for existing matches
-    stmt = select(Transaction.transaction_id, Transaction.fingerprint).where(
-        and_(
-            or_(
-                Transaction.transaction_id.in_(tx_ids) if tx_ids else False,
-                Transaction.fingerprint.in_(fingerprints)
-            ),
-            Transaction.owner_id == actual_owner_id
+    stmt = select(Transaction.transaction_id, Transaction.fingerprint, Transaction.ingestion_id, Transaction.owner_id).where(
+        or_(
+            Transaction.transaction_id.in_(tx_ids) if tx_ids else False,
+            Transaction.fingerprint.in_(fingerprints)
         )
     )
     result = await db.execute(stmt)
     matches = result.all()
     
-    with open("e:/debug.txt", "a") as f:
-        f.write(f"Matches for {actual_owner_id}: {matches}\n")
-    
     matched_ids = {m[0] for m in matches if m[0]}
     matched_fps = {m[1] for m in matches if m[1]}
     
-    # Save staged rows - use INSERT OR IGNORE to gracefully skip any constraint conflicts
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-    from sqlalchemy import inspect as sa_inspect
-
+    # If matching transactions exist in the DB, claim/associate them with actual_owner_id
+    matched_ingestion_id = None
+    if matches:
+        existing_ingestion_ids = {m[2] for m in matches if m[2]}
+        if existing_ingestion_ids and actual_owner_id:
+            first_matched_id = list(existing_ingestion_ids)[0]
+            target_batch_id = first_matched_id if first_matched_id.startswith(f"{actual_owner_id}_") else f"{actual_owner_id}_{first_matched_id}"
+            
+            from sqlalchemy import update
+            await db.execute(
+                update(Transaction)
+                .where(Transaction.ingestion_id.in_(existing_ingestion_ids))
+                .values(owner_id=actual_owner_id, ingestion_id=target_batch_id)
+            )
+            await db.commit()
+            matched_ingestion_id = target_batch_id
+        elif existing_ingestion_ids:
+            matched_ingestion_id = list(existing_ingestion_ids)[0]
+    
+    # Save staged rows
     staged_records = []
     duplicate_count = 0
     seen_tx_ids = set()
@@ -204,6 +218,94 @@ async def upload_statement(
         
     await db.commit()
     
+    target_ing_id = matched_ingestion_id or ingestion_id
+    
+    # Handle Statement & IngestionAuditLog persistence
+    if len(staged_records) == 0:
+        # All rows were duplicates! Update duplicate count on Statement record & log audit
+        stmt_q = select(Statement).where(
+            or_(
+                Statement.ingestion_id == target_ing_id,
+                Statement.file_hash == file_hash
+            )
+        )
+        stmt_res = await db.execute(stmt_q)
+        existing_stmt = stmt_res.scalars().first()
+
+        if existing_stmt:
+            existing_stmt.duplicate_upload_count += 1
+            existing_stmt.last_attempted_upload_at = datetime.utcnow()
+            existing_stmt.is_deleted = False  # Ensure statement remains visible in history
+            
+            audit_log = IngestionAuditLog(
+                statement_id=existing_stmt.id,
+                user_id=actual_owner_id,
+                action="duplicate_attempt",
+                details={"filename": file.filename, "duplicate_count": len(valid_rows)}
+            )
+            db.add(audit_log)
+            await db.commit()
+            final_ingestion_id = existing_stmt.ingestion_id
+        else:
+            # Create statement row for existing ingested transactions
+            total_vol = Decimal(str(sum(float(r["amount"]) for r in valid_rows)))
+            curr_val = valid_rows[0]["currency"] if valid_rows else "USD"
+            new_stmt = Statement(
+                id=uuid.uuid4(),
+                ingestion_id=target_ing_id,
+                filename=file.filename,
+                file_hash=file_hash,
+                user_id=actual_owner_id,
+                project_id=effective_project_id,
+                status="CONFIRMED",
+                transaction_count=len(valid_rows),
+                total_volume=total_vol,
+                currency=curr_val,
+                duplicate_upload_count=1,
+                last_attempted_upload_at=datetime.utcnow()
+            )
+            db.add(new_stmt)
+            await db.flush()
+            
+            audit_log = IngestionAuditLog(
+                statement_id=new_stmt.id,
+                user_id=actual_owner_id,
+                action="duplicate_attempt",
+                details={"filename": file.filename, "duplicate_count": len(valid_rows)}
+            )
+            db.add(audit_log)
+            await db.commit()
+            final_ingestion_id = target_ing_id
+    else:
+        total_vol = Decimal(str(sum(float(r["amount"]) for r in staged_records)))
+        curr_val = staged_records[0]["currency"] if staged_records else "USD"
+        new_stmt = Statement(
+            id=uuid.uuid4(),
+            ingestion_id=ingestion_id,
+            filename=file.filename,
+            file_hash=file_hash,
+            user_id=actual_owner_id,
+            project_id=effective_project_id,
+            status="STAGED",
+            transaction_count=len(staged_records),
+            total_volume=total_vol,
+            currency=curr_val,
+            duplicate_upload_count=0,
+            last_attempted_upload_at=datetime.utcnow()
+        )
+        db.add(new_stmt)
+        await db.flush()
+
+        audit_log = IngestionAuditLog(
+            statement_id=new_stmt.id,
+            user_id=actual_owner_id,
+            action="upload",
+            details={"filename": file.filename, "staged_count": len(staged_records)}
+        )
+        db.add(audit_log)
+        await db.commit()
+        final_ingestion_id = ingestion_id
+
     # Compose preview - limit to first 10 rows
     preview = []
     for r in staged_records[:10]:
@@ -232,18 +334,18 @@ async def upload_statement(
         })
         
     logger.info(
-        "Successfully staged upload records",
-        ingestion_id=ingestion_id,
+        "Successfully processed upload records",
+        ingestion_id=final_ingestion_id,
         staged=len(staged_records),
         duplicates_skipped=duplicate_count,
         invalid_rows=len(invalid_rows)
     )
-    
+
     return ResponseEnvelope(
         success=True,
-        message=f"Statement uploaded and parsed successfully. {len(staged_records)} transactions staged.",
+        message=f"Statement processed. {len(staged_records)} transactions staged, {duplicate_count} duplicates skipped.",
         data={
-            "ingestion_id": ingestion_id,
+            "ingestion_id": final_ingestion_id,
             "valid_count": len(staged_records),
             "invalid_count": len(invalid_rows) + duplicate_count,
             "preview": preview,
@@ -326,6 +428,20 @@ async def confirm_ingestion(
     for t in txs:
         t.status = "CONFIRMED"
         
+    # Update Statement model status & create audit log
+    stmt_q = select(Statement).where(Statement.ingestion_id == ingestion_id)
+    stmt_res = await db.execute(stmt_q)
+    statement_obj = stmt_res.scalars().first()
+    if statement_obj:
+        statement_obj.status = "CONFIRMED"
+        audit = IngestionAuditLog(
+            statement_id=statement_obj.id,
+            user_id=owner_id,
+            action="confirm",
+            details={"ingestion_id": ingestion_id, "confirmed_count": len(txs)}
+        )
+        db.add(audit)
+        
     await db.commit()
     
     # 3. Trigger Detection Engine automatically
@@ -384,11 +500,14 @@ async def get_ingestion_summary(
         if "_" in ingestion_id:
             ing_ids.extend(ingestion_id.split("_"))
 
+        clean_id = ingestion_id.split("_")[-1] if "_" in ingestion_id else ingestion_id
+
         tx_stmt = select(Transaction).where(
             or_(
                 Transaction.ingestion_id == ingestion_id,
                 Transaction.ingestion_id.in_(ing_ids),
-                Transaction.ingestion_id.like(f"%{ingestion_id}%")
+                Transaction.ingestion_id.like(f"%{ingestion_id}%"),
+                Transaction.ingestion_id.like(f"%{clean_id}%")
             )
         )
         res = await db.execute(tx_stmt)
@@ -507,46 +626,103 @@ class IngestionListItem(BaseModel):
     currency: str | None = None
     status: str
     uploaded_at: str
+    duplicate_upload_count: int = 0
+    last_attempted_upload_at: str | None = None
+    is_deleted: bool = False
+    filename: str | None = None
 
 
 @router.get("/list", response_model=ResponseEnvelope[list[IngestionListItem]])
 async def list_ingestions(
     request: Request,
     uploader_id: str | None = Query(None),
+    project_id: str | None = Query(None),
+    include_deleted: bool = Query(False),
+    isolated_only: bool = Query(False),
     db: AsyncSession = Depends(get_db_session),
 ) -> ResponseEnvelope[list[IngestionListItem]]:
     """
-    Returns a list of all past ingestion batches, sorted newest-first.
-    Each row includes the ingestion_id, transaction count, total volume, status, and earliest timestamp.
+    Returns a list of past statement ingestions scoped to project context.
+    Enforces user data isolation for confidential statement uploads.
     """
-    stmt = select(
+    header_user_id = request.headers.get("x-user-id")
+    header_project_id = request.headers.get("x-project-id")
+    header_role = (request.headers.get("x-user-role") or "admin").lower()
+
+    effective_project_id = project_id or header_project_id or "default"
+
+    # Self-healing backfill for legacy Transaction ingestion_ids not yet in Statement table
+    tx_groups_stmt = select(
         Transaction.ingestion_id,
         func.count(Transaction.id).label("tx_count"),
         func.sum(Transaction.amount).label("total_volume"),
         func.max(Transaction.currency).label("currency"),
         func.max(Transaction.status).label("status"),
         func.min(Transaction.timestamp).label("uploaded_at"),
-    ).where(
-        Transaction.ingestion_id.isnot(None)
-    )
-    if uploader_id:
-        stmt = stmt.where(Transaction.ingestion_id.like(f"{uploader_id}_%"))
-        
-    stmt = stmt.group_by(Transaction.ingestion_id).order_by(func.min(Transaction.timestamp).desc())
+        func.max(Transaction.owner_id).label("owner_id"),
+    ).where(Transaction.ingestion_id.isnot(None)).group_by(Transaction.ingestion_id)
+    
+    tx_groups_res = await db.execute(tx_groups_stmt)
+    tx_groups = tx_groups_res.all()
 
-    res = await db.execute(stmt)
-    rows = res.all()
+    existing_stmts_res = await db.execute(select(Statement.ingestion_id))
+    existing_ing_ids = set(existing_stmts_res.scalars().all())
+
+    backfill_added = False
+    for tg in tx_groups:
+        if tg.ingestion_id not in existing_ing_ids:
+            st = Statement(
+                id=uuid.uuid4(),
+                ingestion_id=tg.ingestion_id,
+                filename="legacy_statement.csv",
+                user_id=tg.owner_id,
+                project_id=effective_project_id,
+                status=tg.status or "CONFIRMED",
+                transaction_count=tg.tx_count or 0,
+                total_volume=Decimal(str(tg.total_volume or 0)),
+                currency=tg.currency or "USD",
+                duplicate_upload_count=0,
+                created_at=tg.uploaded_at or datetime.utcnow(),
+                last_attempted_upload_at=tg.uploaded_at or datetime.utcnow(),
+            )
+            db.add(st)
+            existing_ing_ids.add(tg.ingestion_id)
+            backfill_added = True
+
+    if backfill_added:
+        await db.commit()
+
+    # Query Statement table with project filtering & user data isolation logic
+    query = select(Statement).where(Statement.project_id == effective_project_id)
+
+    is_privileged = header_role in ("investigator", "compliance_admin", "admin")
+
+    # Enforce strict user data isolation if isolated_only=True or non-privileged user
+    if (isolated_only or not is_privileged) and uploader_id and isinstance(uploader_id, str):
+        query = query.where(Statement.user_id == uploader_id)
+
+    if not (include_deleted and is_privileged):
+        query = query.where(or_(Statement.is_deleted == False, Statement.is_deleted.is_(None)))
+
+    query = query.order_by(Statement.created_at.desc())
+
+    res = await db.execute(query)
+    stmt_rows = res.scalars().all()
 
     items = [
         IngestionListItem(
-            ingestion_id=str(r.ingestion_id),
-            transaction_count=r.tx_count,
-            total_volume=float(r.total_volume or 0),
-            currency=r.currency,
-            status=r.status or "CONFIRMED",
-            uploaded_at=r.uploaded_at.isoformat() if r.uploaded_at else "",
+            ingestion_id=s.ingestion_id,
+            transaction_count=s.transaction_count,
+            total_volume=float(s.total_volume or 0),
+            currency=s.currency,
+            status=s.status,
+            uploaded_at=s.created_at.isoformat() if s.created_at else "",
+            duplicate_upload_count=s.duplicate_upload_count,
+            last_attempted_upload_at=s.last_attempted_upload_at.isoformat() if s.last_attempted_upload_at else None,
+            is_deleted=s.is_deleted,
+            filename=s.filename
         )
-        for r in rows
+        for s in stmt_rows
     ]
 
     return ResponseEnvelope(
@@ -564,16 +740,33 @@ async def delete_ingestion(
     db: AsyncSession = Depends(get_db_session),
 ) -> ResponseEnvelope[dict]:
     """
-    Deletes an uploaded statement (and its transactions) by ingestion_id.
+    Soft-deletes an uploaded statement by ingestion_id.
+    Preserves all linked transaction records and audit logs.
     """
-    stmt = delete(Transaction).where(Transaction.ingestion_id == ingestion_id)
-    await db.execute(stmt)
-    await db.commit()
-    
+    user_id = request.headers.get("x-user-id")
+
+    stmt = select(Statement).where(Statement.ingestion_id == ingestion_id)
+    res = await db.execute(stmt)
+    statement = res.scalars().first()
+
+    if statement:
+        statement.is_deleted = True
+        statement.deleted_at = datetime.utcnow()
+        statement.deleted_by = user_id
+
+        audit = IngestionAuditLog(
+            statement_id=statement.id,
+            user_id=user_id,
+            action="soft_delete",
+            details={"ingestion_id": ingestion_id}
+        )
+        db.add(audit)
+        await db.commit()
+
     return ResponseEnvelope(
         success=True,
-        message=f"Statement {ingestion_id} deleted successfully.",
-        data={"ingestion_id": ingestion_id},
+        message=f"Statement {ingestion_id} soft-deleted successfully.",
+        data={"ingestion_id": ingestion_id, "is_deleted": True},
         request_id=request.state.request_id,
     )
 

@@ -13,7 +13,9 @@ from shared.database.models import (
     RiskScore,
     Alert,
     Case,
-    AuditLog
+    AuditLog,
+    Statement,
+    IngestionAuditLog
 )
 
 __all__ = [
@@ -37,5 +39,7 @@ __all__ = [
     "RiskScore",
     "Alert",
     "Case",
-    "AuditLog"
+    "AuditLog",
+    "Statement",
+    "IngestionAuditLog"
 ]

@@ -342,10 +342,12 @@ async def get_dashboard_stats(request: Request, ingestion_id: str | None = None)
             except Exception as exc:
                 logger.warning("Ingestion summary fetch failed, falling back to global stats", error=str(exc))
 
-        # ── GLOBAL ALL-TIME STATS ─────────────────────────────────────────────
+        # ── GLOBAL ALL-TIME STATS (Scoped to current user) ────────────────────
         try:
+            user_id = headers.get("X-User-ID")
+            uploader_param = f"?uploader_id={user_id}" if user_id else ""
             list_res = await client.get(
-                f"{SERVICES_MAP['ingestion']}/api/v1/ingestion/list",
+                f"{SERVICES_MAP['ingestion']}/api/v1/ingestion/list{uploader_param}",
                 headers=headers
             )
             if list_res.status_code == 200:
@@ -353,7 +355,7 @@ async def get_dashboard_stats(request: Request, ingestion_id: str | None = None)
                 if batches:
                     total_txs = sum(b.get("transaction_count", 0) for b in batches)
                     total_vol = sum(float(b.get("total_volume", 0)) for b in batches)
-                    currency_code = batches[0].get("currency", "USD") if batches else "USD"
+                    currency_code = batches[0].get("currency", "INR") if batches else "INR"
                     currency_symbols = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "INR": "₹", "AUD": "A$", "CAD": "C$"}
                     symbol = currency_symbols.get(currency_code, f"{currency_code} ")
 
@@ -365,7 +367,7 @@ async def get_dashboard_stats(request: Request, ingestion_id: str | None = None)
 
                     return {
                         "success": True,
-                        "message": "Global dynamic stats compiled from active ledger.",
+                        "message": "Global dynamic stats compiled from active user ledger.",
                         "data": {
                             "total_accounts": f"{total_txs * 2:,}",
                             "critical_alerts": str(alert_count),
@@ -382,7 +384,7 @@ async def get_dashboard_stats(request: Request, ingestion_id: str | None = None)
             "data": {
                 "total_accounts": "0",
                 "critical_alerts": "0",
-                "suspected_laundered_volume": "$0.00",
+                "suspected_laundered_volume": "₹0.00",
                 "ai_accuracy": "99.0%"
             }
         }

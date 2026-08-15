@@ -13,14 +13,20 @@ export interface AuthUser {
   avatar_url?: string;
 }
 
+// 1 hour in milliseconds — matches the server-side ACCESS_TOKEN_EXPIRE_MINUTES=60
+const SESSION_DURATION_MS = 60 * 60 * 1000;
+
 interface AuthState {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** Absolute timestamp (ms since epoch) when the current session expires */
+  sessionExpiry: number | null;
 
   // Actions
   initialize: () => Promise<void>;
   logout: () => Promise<void>;
+  refreshSession: () => Promise<void>;
   setUser: (user: AuthUser) => void;
   updateProfile: (data: Partial<AuthUser>) => Promise<void>;
   setupMfa: () => Promise<{ secret: string; qr_code_uri: string }>;
@@ -32,16 +38,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
+  sessionExpiry: null,
 
   initialize: async () => {
     const token =
       typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) {
-      set({ isLoading: false, isAuthenticated: false, user: null });
+      set({ isLoading: false, isAuthenticated: false, user: null, sessionExpiry: null });
       return;
     }
+
+    // Abort the auth check after 8 seconds so the user is never stuck on the
+    // loading screen when the backend is unreachable or very slow.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8_000);
+
     try {
-      const response = await apiClient.get<any>("/api/v1/auth/me");
+      const response = await apiClient.get<any>("/api/v1/auth/me", {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
       if (response && response.success && response.data) {
         const raw = response.data;
         // roles from backend are RoleResponse objects: { id, name, description }
@@ -62,18 +78,52 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           user: u,
           isAuthenticated: true,
           isLoading: false,
+          sessionExpiry: Date.now() + SESSION_DURATION_MS,
         });
       } else {
         // Token is invalid or expired
+        clearTimeout(timeoutId);
         localStorage.removeItem("token");
         localStorage.removeItem("refresh_token");
-        set({ user: null, isAuthenticated: false, isLoading: false });
+        set({ user: null, isAuthenticated: false, isLoading: false, sessionExpiry: null });
       }
     } catch {
-      // On any error (401, network), treat as logged out
+      // On any error (401, network error, timeout abort) — treat as logged out
+      clearTimeout(timeoutId);
       localStorage.removeItem("token");
       localStorage.removeItem("refresh_token");
-      set({ user: null, isAuthenticated: false, isLoading: false });
+      set({ user: null, isAuthenticated: false, isLoading: false, sessionExpiry: null });
+    }
+  },
+
+  /**
+   * Silently refreshes the access token and resets the 1-hour session timer.
+   * Called by the session watcher when the user chooses "Stay Logged In".
+   */
+  refreshSession: async () => {
+    const refreshToken =
+      typeof window !== "undefined" ? localStorage.getItem("refresh_token") : null;
+    if (!refreshToken) {
+      await get().logout();
+      return;
+    }
+    try {
+      const response = await apiClient.post<any>("/api/v1/auth/refresh", {
+        refresh_token: refreshToken,
+      });
+      if (response && response.data?.access_token) {
+        localStorage.setItem("token", response.data.access_token);
+        if (response.data.refresh_token) {
+          localStorage.setItem("refresh_token", response.data.refresh_token);
+        }
+        // Reset the session timer to another full hour
+        set({ sessionExpiry: Date.now() + SESSION_DURATION_MS });
+      } else {
+        // Refresh endpoint returned no token — force logout
+        await get().logout();
+      }
+    } catch {
+      await get().logout();
     }
   },
 
@@ -86,7 +136,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem("token");
       localStorage.removeItem("refresh_token");
       sessionStorage.clear();
-      set({ user: null, isAuthenticated: false, isLoading: false });
+      if (typeof document !== "undefined") {
+        document.cookie = "muleshield_token=; path=/; max-age=0; SameSite=Strict";
+      }
+      set({ user: null, isAuthenticated: false, isLoading: false, sessionExpiry: null });
       if (typeof window !== "undefined") {
         window.location.href = "/login";
       }

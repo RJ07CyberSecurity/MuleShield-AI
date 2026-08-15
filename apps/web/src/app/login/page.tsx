@@ -21,7 +21,7 @@ function storeAuthTokens(access_token: string, refresh_token: string) {
   localStorage.setItem("token", access_token);
   localStorage.setItem("refresh_token", refresh_token);
   // Mirror token in cookie for Next.js Edge Middleware (max-age = 15 min, same as JWT)
-  document.cookie = `muleshield_token=${access_token}; path=/; max-age=900; SameSite=Strict`;
+  document.cookie = `muleshield_token=${access_token}; path=/; max-age=3600; SameSite=Strict`;
 }
 
 export default function LoginPage() {
@@ -167,16 +167,16 @@ export default function LoginPage() {
 
   const handleAdminSendOtp = async (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!adminPhoneNumber.trim()) {
+    if (!phoneNumber.trim()) {
       setError("Please enter a valid phone number including country code.");
       return;
     }
     setError(null);
-    setAdminDevOtpHint(null);
+    setDevOtpHint(null);
     setOtpSuccessMessage(null);
     setIsLoading(true);
     try {
-      let formattedPhone = adminPhoneNumber.trim();
+      let formattedPhone = phoneNumber.trim();
       if (!formattedPhone.startsWith("+")) {
         if (/^\d+$/.test(formattedPhone)) {
           formattedPhone = "+" + formattedPhone;
@@ -184,10 +184,10 @@ export default function LoginPage() {
       }
 
       const session = await sendPhoneOtp(formattedPhone);
-      setAdminPhoneSession(session);
-      setAdminPhoneSent(true);
+      setPhoneSession(session);
+      setOtpSent(true);
       if (session.provider === "backend" && session.devCode) {
-        setAdminDevOtpHint(session.devCode);
+        setDevOtpHint(session.devCode);
         setOtpSuccessMessage("Firebase unavailable. Developer test code generated!");
       } else {
         setOtpSuccessMessage("OTP sent successfully via SMS!");

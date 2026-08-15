@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState, useRef } from "react";
 import Sidebar from "./Sidebar";
 import ToastContainer from "./ToastContainer";
+import SessionExpiryModal from "./SessionExpiryModal";
 import { useUIStore } from "../../store/useUIStore";
 import { useAlertStore } from "../../store/useAlertStore";
 import { useCaseStore } from "../../store/useCaseStore";
@@ -19,8 +20,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const { cases, fetchCases, activeCaseId } = useCaseStore();
   const { user, isAuthenticated, isLoading, initialize, logout } = useAuthStore();
 
-  // Mount the global real-time socket
-  useInvestigationSocket({ activeCaseId, isAuthenticated });
+  // Mount the global real-time socket.
+  // Pass isAuthenticated — the hook guards internally and skips connection while false.
+  // This prevents WebSocket errors during the loading phase (which trigger _error.js in dev).
+  useInvestigationSocket({ activeCaseId, isAuthenticated: isAuthenticated && !isLoading });
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -41,12 +44,19 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     initialize();
   }, [initialize]);
 
-  // Protect private routes: redirect to /login when unauthenticated
+  // Protect private routes: redirect unauthenticated users to /login
   useEffect(() => {
     if (!isLoading && !isAuthenticated && !isAuthOrLanding) {
       router.push("/login");
     }
   }, [isLoading, isAuthenticated, isAuthOrLanding, router]);
+
+  // Redirect authenticated users away from landing page to the dashboard
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && pathname === "/") {
+      router.push("/dashboard");
+    }
+  }, [isLoading, isAuthenticated, pathname, router]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -128,7 +138,28 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     ]
     : [];
 
-  // If on login, signup, or landing pages, render page content directly full-screen
+  // While auth state is resolving, show a full-screen spinner for ALL routes.
+  // This prevents any flash of the wrong layout (dashboard shell vs. landing page)
+  // during the async initialize() call that reads from localStorage + calls /api/v1/auth/me.
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#07090e] flex flex-col items-center justify-center gap-6">
+        <div className="relative flex items-center justify-center w-20 h-20">
+          <div className="absolute inset-0 rounded-full border-t-2 border-primary animate-spin" />
+          <div className="absolute inset-2 rounded-full border-b-2 border-primary/50 animate-spin [animation-direction:reverse]" />
+          <span className="material-symbols-outlined text-primary text-3xl animate-pulse">shield</span>
+        </div>
+        <div className="text-center space-y-2">
+          <h2 className="text-xl font-bold text-on-surface animate-pulse">Authenticating Session…</h2>
+          <p className="text-sm text-on-surface-variant max-w-sm">
+            Establishing secure connection to the MuleShield AI network.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // If on login, signup, or landing pages, render page content directly full-screen (no sidebar).
   if (isAuthOrLanding) {
     return <>{children}</>;
   }
@@ -191,6 +222,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       </>
     );
   };
+
+  // (Dead code removed — isAuthOrLanding is already handled above after the loading gate.)
 
   return (
     <div suppressHydrationWarning className="min-h-screen bg-surface text-on-surface">
@@ -415,36 +448,24 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
               logout
             </button>
 
-            {/* Profile avatar with real user initials */}
-            <div
+            {/* Profile avatar with real user initials - clickable link to /profile */}
+            <Link
+              href="/profile"
               suppressHydrationWarning
-              title={user ? `${user.first_name} ${user.last_name}` : "User"}
-              className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center text-primary font-bold text-xs shadow"
+              title={user ? `${user.first_name} ${user.last_name} (View Profile)` : "View Profile"}
+              className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center text-primary font-bold text-xs shadow hover:border-primary hover:bg-primary/30 hover:scale-105 transition-all cursor-pointer select-none"
             >
               {user
                 ? `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`
                 : <span className="material-symbols-outlined text-sm">account_circle</span>}
-            </div>
+            </Link>
           </div>
         </header>
 
         {/* Dynamic Route Content - Premium Constraints */}
+        {/* Note: isLoading is already handled above — we never reach here while loading */}
         <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-[1600px] w-full mx-auto space-y-4 sm:space-y-6 md:space-y-8 overflow-x-hidden">
-          {isLoading ? (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6">
-              <div className="relative flex items-center justify-center w-20 h-20">
-                <div className="absolute inset-0 rounded-full border-t-2 border-primary animate-spin"></div>
-                <div className="absolute inset-2 rounded-full border-b-2 border-primary/50 animate-spin direction-reverse"></div>
-                <span className="material-symbols-outlined text-primary text-3xl animate-pulse">shield</span>
-              </div>
-              <h2 className="text-xl font-bold font-display-kpi text-on-surface animate-pulse">
-                Authenticating Session...
-              </h2>
-              <p className="text-sm text-on-surface-variant max-w-sm">
-                Retrieving your compliance clearance profile and establishing secure connection to the MuleShield AI network.
-              </p>
-            </div>
-          ) : isAuthenticated && user ? (
+          {isAuthenticated && user ? (
             user.is_active && user.roles.some((r) => ["investigator", "compliance_officer", "administrator", "analyst", "system"].includes(r)) ? (
               children
             ) : (
@@ -468,6 +489,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
       {/* Global notifications render */}
       <ToastContainer />
+
+      {/* Session expiry warning modal — shown 5 minutes before auto-logout */}
+      <SessionExpiryModal />
     </div>
   );
 }

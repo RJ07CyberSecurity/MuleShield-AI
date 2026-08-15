@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, Numeric, DateTime, Float, ForeignKey, Text, JSON, Date, Boolean, Integer
+from sqlalchemy import String, Numeric, DateTime, Float, ForeignKey, Text, JSON, Date, Boolean, Integer, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from shared.database.postgres import Base
 from shared.database.encryption import EncryptedString
@@ -340,3 +340,60 @@ class ModelFeedback(Base):
 
     def __repr__(self) -> str:
         return f"<ModelFeedback(account={self.account_id}, TP={self.is_true_positive})>"
+
+
+class Statement(Base):
+    """
+    Ingested bank statement tracking metadata, duplicate re-uploads, project isolation, and soft deletes.
+    """
+    __tablename__ = "statements"
+    __table_args__ = (
+        Index("idx_statements_proj_user_created", "project_id", "user_id", "created_at"),
+        Index("idx_statements_proj_deleted", "project_id", "is_deleted"),
+        {'extend_existing': True}
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    ingestion_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_hash: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    project_id: Mapped[str] = mapped_column(String(255), default="default", index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="CONFIRMED", nullable=False)
+    transaction_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_volume: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=2), default=0.00, nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), default="USD", nullable=False)
+    duplicate_upload_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_attempted_upload_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    audit_logs: Mapped[list["IngestionAuditLog"]] = relationship(back_populates="statement", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<Statement(ingestion_id={self.ingestion_id}, project={self.project_id}, duplicate_count={self.duplicate_upload_count}, is_deleted={self.is_deleted})>"
+
+
+class IngestionAuditLog(Base):
+    """
+    Audit log tracking lifecycle operations on statement ingestions (e.g. duplicate_attempt, upload, soft_delete).
+    """
+    __tablename__ = "ingestion_audit_log"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    statement_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("statements.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(100), nullable=False)  # duplicate_attempt, upload, confirm, soft_delete
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Relationships
+    statement: Mapped["Statement | None"] = relationship(back_populates="audit_logs")
+
+    def __repr__(self) -> str:
+        return f"<IngestionAuditLog(statement_id={self.statement_id}, action={self.action}, timestamp={self.timestamp})>"
+

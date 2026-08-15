@@ -101,12 +101,12 @@ export default function Home() {
     <div className="font-body-md text-body-md overflow-x-hidden min-h-screen bg-[#07090e] text-on-surface">
       {/* Top Navbar */}
       <header className="fixed top-0 z-50 w-full bg-[#07090e]/80 backdrop-blur-md h-16 flex items-center justify-between px-margin-desktop border-b border-outline-variant/10">
-        <div className="flex items-center gap-2 select-none">
-          <span className="material-symbols-outlined text-primary font-bold text-3xl">shield</span>
+        <Link href="/" className="flex items-center gap-2.5 select-none">
+          <img src="/muleshield-logo.jpg" alt="MuleShield AI" className="w-8 h-8 object-contain rounded-lg shadow-[0_0_12px_rgba(6,182,212,0.4)] flex-shrink-0" />
           <span className="font-headline-sm text-headline-sm font-bold text-primary tracking-tight">
             MuleShield AI
           </span>
-        </div>
+        </Link>
         <nav className="hidden md:flex gap-8">
           <a className="font-label-mono text-label-mono text-primary border-b border-primary pb-1" href="#platform">Platform</a>
           <a className="font-label-mono text-label-mono text-on-surface-variant hover:text-on-surface transition-colors" href="#features">Solutions</a>
@@ -114,10 +114,10 @@ export default function Home() {
           <a className="font-label-mono text-label-mono text-on-surface-variant hover:text-on-surface transition-colors" href="#pricing">Resources</a>
         </nav>
         <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="text-on-surface-variant hover:text-on-surface text-body-sm font-semibold transition-colors">
+          <Link href="/login" className="text-on-surface-variant hover:text-on-surface text-body-sm font-semibold transition-colors">
             Sign In
           </Link>
-          <Link href="/dashboard" className="bg-primary-container text-on-primary-container font-bold px-4 py-2 rounded-lg text-body-sm hover:opacity-90 transition-opacity">
+          <Link href="/login" className="bg-primary-container text-on-primary-container font-bold px-4 py-2 rounded-lg text-body-sm hover:opacity-90 transition-opacity">
             Request Demo
           </Link>
         </div>
@@ -149,7 +149,7 @@ export default function Home() {
             {/* CTAs */}
             <div className="flex flex-wrap gap-4 pt-2">
               <Link
-                href="/dashboard"
+                href="/login"
                 className="bg-primary text-on-primary px-8 py-4 rounded-xl font-bold flex items-center gap-2 hover:translate-y-[-2px] transition-all shadow-lg shadow-primary/20"
               >
                 Request a Demo
@@ -329,21 +329,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Dashboard Screen Mock Showcase Section */}
-      <section className="py-16 bg-[#07090e]">
-        <div className="container mx-auto px-margin-desktop text-center">
-          <div className="rounded-3xl border border-outline-variant/30 overflow-hidden shadow-2xl relative max-w-5xl mx-auto group">
-            <div className="absolute inset-0 bg-gradient-to-tr from-primary/10 to-transparent pointer-events-none"></div>
-            {/* Custom glowing visual border */}
-            <div className="absolute inset-0 border border-primary/20 rounded-3xl pointer-events-none group-hover:border-primary/50 transition-all duration-300"></div>
-            <img
-              className="w-full object-cover aspect-[16/10]"
-              alt="MuleShield interactive network explorer workspace interface mockup"
-              src="https://lh3.googleusercontent.com/aida-public/AB6AXuBG5YBxdAPcpRz4rSGHtfEYDCn4JAXZPIivXJtXxCLieGm66yA96WrF7XyH8PnwGaD6WJgjNwEPpHKePmClG-X_khOHl-asqPh4aMjeJZhNd8ONFcFEW93pQuRDY8DPKbMhwIxgbggOLDvp4H-laBsvFaTg9D7QN-JpIIkNS7XXZRgEg-NKW0p51Z9UiUGkd2ExDH3kgnssXoo_NolJtMr39HGuxdq7taXmfnWyeYSCrwvq0ys0FTNc"
-            />
-          </div>
-        </div>
-      </section>
 
       {/* Operational Scaling (Pricing) Section */}
       <section id="pricing" className="py-28 bg-[#0a0d17] border-y border-outline-variant/10">

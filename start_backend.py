@@ -57,37 +57,37 @@ except ImportError:
 services = [
     {
         "name": "Auth Service",
-        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8001"],
+        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8001", "--reload"],
         "cwd": os.path.join("backend", "services", "auth-service")
     },
     {
         "name": "Customer Service",
-        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8002"],
+        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8002", "--reload"],
         "cwd": os.path.join("backend", "services", "customer-service")
     },
     {
         "name": "Account Service",
-        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8003"],
+        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8003", "--reload"],
         "cwd": os.path.join("backend", "services", "account-service")
     },
     {
         "name": "Ingestion Service",
-        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8004"],
+        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8004", "--reload"],
         "cwd": os.path.join("backend", "services", "ingestion-service")
     },
     {
         "name": "Detection Engine",
-        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8005"],
+        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8005", "--reload"],
         "cwd": os.path.join("backend", "services", "detection-engine")
     },
     {
         "name": "Reporting Service",
-        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8006"],
+        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8006", "--reload"],
         "cwd": os.path.join("backend", "services", "reporting-service")
     },
     {
         "name": "API Gateway",
-        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8000"],
+        "cmd": [sys.executable, "-m", "uvicorn", "app.main:app", "--port", "8000", "--reload"],
         "cwd": os.path.join("backend", "services", "gateway")
     }
 ]

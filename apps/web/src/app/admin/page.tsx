@@ -1,12 +1,49 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { useUIStore } from "../../store/useUIStore";
+import { useAuthStore } from "../../store/useAuthStore";
 import { CURRENCY_SYMBOL } from "@/utils/currency";
 import { apiClient } from "../../services/api-client";
 
 export default function AdminPage() {
+  const { user, isLoading } = useAuthStore();
+  const isAdmin = Boolean(
+    user?.roles?.some((r) =>
+      ["administrator", "admin"].includes(
+        typeof r === "string" ? r.toLowerCase() : (r as any)?.name?.toLowerCase()
+      )
+    )
+  );
+
   const [activeTab, setActiveTab] = useState<"health" | "users" | "developer" | "audit" | "notifications">("health");
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+        <span className="material-symbols-outlined text-risk-high text-6xl">gpp_bad</span>
+        <h2 className="text-3xl font-bold text-on-surface">403 - Access Denied</h2>
+        <p className="text-on-surface-variant max-w-md">
+          The Admin Console is strictly reserved for system administrators. You do not have permission to view or manage administrative settings.
+        </p>
+        <Link
+          href="/dashboard"
+          className="px-6 py-3 mt-4 bg-primary text-on-primary rounded-xl font-bold hover:bg-primary-fixed transition-colors inline-block"
+        >
+          Return to Dashboard
+        </Link>
+      </div>
+    );
+  }
 
   const [users, setUsers] = useState<any[]>([]);
   
@@ -337,7 +374,7 @@ export default function AdminPage() {
                     <tr key={i} className="border-b border-outline-variant/10 text-xs hover:bg-surface-container-high/20 transition-colors">
                       <td className="px-4 py-4 flex items-center gap-3">
                         <span className="w-8 h-8 rounded-full bg-secondary-container text-primary font-bold flex items-center justify-center border border-outline-variant/30">
-                          {u.name.split(" ").map(n=>n[0]).join("")}
+                          {u.name.split(" ").map((n: string) => n[0]).join("")}
                         </span>
                         <div>
                           <div className="font-bold text-on-surface">{u.name}</div>
