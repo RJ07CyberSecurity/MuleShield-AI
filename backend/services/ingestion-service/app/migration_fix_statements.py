@@ -55,7 +55,7 @@ async def run_statement_migration(session: AsyncSession) -> dict:
                     id=uuid.uuid4(),
                     ingestion_id=str(tg.ingestion_id),
                     filename="bank_statement_ledger.csv",
-                    user_id=tg.owner_id,
+                    user_id=tg.owner_id or (str(tg.ingestion_id).rsplit("_", 1)[0] if "_" in str(tg.ingestion_id) else None),
                     project_id="default",
                     status=tg.status or "CONFIRMED",
                     transaction_count=tg.tx_count or 0,

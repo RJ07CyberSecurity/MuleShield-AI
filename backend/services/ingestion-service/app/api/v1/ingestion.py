@@ -114,11 +114,14 @@ async def upload_statement(
     tx_ids = [r["transaction_id"] for r in valid_rows if r["transaction_id"]]
     fingerprints = [r["fingerprint"] for r in valid_rows]
     
-    # Query database for existing matches
+    # Query database for existing matches scoped to current user context
     stmt = select(Transaction.transaction_id, Transaction.fingerprint, Transaction.ingestion_id, Transaction.owner_id).where(
-        or_(
-            Transaction.transaction_id.in_(tx_ids) if tx_ids else False,
-            Transaction.fingerprint.in_(fingerprints)
+        and_(
+            Transaction.owner_id == actual_owner_id,
+            or_(
+                Transaction.transaction_id.in_(tx_ids) if tx_ids else False,
+                Transaction.fingerprint.in_(fingerprints)
+            )
         )
     )
     result = await db.execute(stmt)
@@ -127,23 +130,11 @@ async def upload_statement(
     matched_ids = {m[0] for m in matches if m[0]}
     matched_fps = {m[1] for m in matches if m[1]}
     
-    # If matching transactions exist in the DB, claim/associate them with actual_owner_id
+    # If matching transactions exist in the DB, identify matched ingestion id without mutating historical records
     matched_ingestion_id = None
     if matches:
         existing_ingestion_ids = {m[2] for m in matches if m[2]}
-        if existing_ingestion_ids and actual_owner_id:
-            first_matched_id = list(existing_ingestion_ids)[0]
-            target_batch_id = first_matched_id if first_matched_id.startswith(f"{actual_owner_id}_") else f"{actual_owner_id}_{first_matched_id}"
-            
-            from sqlalchemy import update
-            await db.execute(
-                update(Transaction)
-                .where(Transaction.ingestion_id.in_(existing_ingestion_ids))
-                .values(owner_id=actual_owner_id, ingestion_id=target_batch_id)
-            )
-            await db.commit()
-            matched_ingestion_id = target_batch_id
-        elif existing_ingestion_ids:
+        if existing_ingestion_ids:
             matched_ingestion_id = list(existing_ingestion_ids)[0]
     
     # Save staged rows
@@ -224,9 +215,11 @@ async def upload_statement(
     if len(staged_records) == 0:
         # All rows were duplicates! Update duplicate count on Statement record & log audit
         stmt_q = select(Statement).where(
+            Statement.user_id == actual_owner_id,
             or_(
                 Statement.ingestion_id == target_ing_id,
-                Statement.file_hash == file_hash
+                Statement.file_hash == file_hash,
+                Statement.transaction_count == len(valid_rows)
             )
         )
         stmt_res = await db.execute(stmt_q)
@@ -647,7 +640,7 @@ async def list_ingestions(
     """
     header_user_id = request.headers.get("x-user-id")
     header_project_id = request.headers.get("x-project-id")
-    header_role = (request.headers.get("x-user-role") or "admin").lower()
+    header_role = (request.headers.get("x-user-role") or "analyst").lower()
 
     effective_project_id = project_id or header_project_id or "default"
 
@@ -675,7 +668,7 @@ async def list_ingestions(
                 id=uuid.uuid4(),
                 ingestion_id=tg.ingestion_id,
                 filename="legacy_statement.csv",
-                user_id=tg.owner_id,
+                user_id=tg.owner_id or (str(tg.ingestion_id).rsplit("_", 1)[0] if "_" in str(tg.ingestion_id) else None),
                 project_id=effective_project_id,
                 status=tg.status or "CONFIRMED",
                 transaction_count=tg.tx_count or 0,
@@ -695,10 +688,16 @@ async def list_ingestions(
     # Query Statement table with project filtering & user data isolation logic
     query = select(Statement).where(Statement.project_id == effective_project_id)
 
-    is_privileged = header_role in ("investigator", "compliance_admin", "admin")
+    is_privileged = header_role in ("administrator", "admin", "compliance_officer", "compliance_admin", "investigator")
 
-    # Enforce strict user data isolation if isolated_only=True or non-privileged user
-    if (isolated_only or not is_privileged) and uploader_id and isinstance(uploader_id, str):
+    # Enforce strict user data isolation if non-privileged user or explicit uploader_id filtering
+    if not is_privileged:
+        target_user = header_user_id or uploader_id
+        if target_user:
+            query = query.where(Statement.user_id == target_user)
+        else:
+            query = query.where(Statement.user_id == "__UNAUTHENTICATED__")
+    elif uploader_id and isinstance(uploader_id, str):
         query = query.where(Statement.user_id == uploader_id)
 
     if not (include_deleted and is_privileged):
@@ -708,6 +707,15 @@ async def list_ingestions(
 
     res = await db.execute(query)
     stmt_rows = res.scalars().all()
+
+    deduped_rows = []
+    seen_keys = set()
+    for s in stmt_rows:
+        key = s.file_hash if s.file_hash else (s.user_id, s.transaction_count, float(s.total_volume or 0))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped_rows.append(s)
 
     items = [
         IngestionListItem(
@@ -722,7 +730,7 @@ async def list_ingestions(
             is_deleted=s.is_deleted,
             filename=s.filename
         )
-        for s in stmt_rows
+        for s in deduped_rows
     ]
 
     return ResponseEnvelope(

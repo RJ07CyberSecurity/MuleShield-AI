@@ -3,6 +3,10 @@ import sys
 import os
 import time
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+
 def main():
     print("=" * 60)
     print("🚀 Starting MuleShield AI (Frontend & Backend - LOCAL MODE) 🚀")

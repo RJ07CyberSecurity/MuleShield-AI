@@ -3,6 +3,10 @@ import sys
 import os
 import time
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+
 print("MuleShield AI - Starting Backend Local Stack (Zero-Dependency SQLite Mode)")
 
 # 1. Install pip dependencies

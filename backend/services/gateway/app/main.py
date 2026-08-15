@@ -296,8 +296,15 @@ def inject_user_id(request: Request, headers: dict):
             payload = decode_token(token, settings.JWT_SECRET_KEY, settings.JWT_ALGORITHM)
             if "sub" in payload:
                 headers["X-User-ID"] = str(payload["sub"])
+            if "roles" in payload and payload["roles"]:
+                roles = payload["roles"]
+                primary_role = roles[0] if isinstance(roles, list) and roles else str(roles)
+                headers["X-User-Role"] = str(primary_role)
+            else:
+                headers["X-User-Role"] = "analyst"
         except Exception as e:
             logger.warning("Gateway JWT decode failed", error=str(e))
+            headers["X-User-Role"] = "anonymous"
 
 @router.get("/dashboard/stats")
 async def get_dashboard_stats(request: Request, ingestion_id: str | None = None):

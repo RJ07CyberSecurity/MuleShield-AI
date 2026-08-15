@@ -132,7 +132,7 @@ class Transaction(Base):
     narration_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
     
     status: Mapped[str] = mapped_column(Text, default="STAGED", nullable=False)  # STAGED, CONFIRMED
-    fingerprint: Mapped[str] = mapped_column(Text, unique=True, index=True, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(Text, index=True, nullable=False)
 
     def __repr__(self) -> str:
         return (
