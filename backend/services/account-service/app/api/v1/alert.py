@@ -161,19 +161,16 @@ async def get_graph(
     """
     Generates the dynamic relationship graph from active SQLite databases.
     """
+    if not ingestion_id:
+        return GraphDataResponse(nodes=[], edges=[])
+
     from shared.database.models import Transaction, Customer, Account, RiskScore, Alert
 
     # Filter transactions to construct actual edges dynamically
     owner_id = claims.get("sub") if claims else None
-    tx_stmt = select(Transaction)
-    
-    # If a specific statement was uploaded and selected, strictly isolate graph to that dataset
-    if ingestion_id:
-        tx_stmt = tx_stmt.where(Transaction.ingestion_id == ingestion_id)
-        if owner_id:
-            tx_stmt = tx_stmt.where(Transaction.owner_id == owner_id)
-    # If no statement is selected, allow the pre-fetched default network graph to load
-    # by intentionally bypassing the owner_id constraint here.
+    tx_stmt = select(Transaction).where(Transaction.ingestion_id == ingestion_id)
+    if owner_id:
+        tx_stmt = tx_stmt.where(Transaction.owner_id == owner_id)
     txs_res = await session.execute(tx_stmt)
     transactions = txs_res.scalars().all()
 

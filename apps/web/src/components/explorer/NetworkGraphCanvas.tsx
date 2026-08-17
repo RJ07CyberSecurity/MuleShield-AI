@@ -176,6 +176,36 @@ export default function NetworkGraphCanvas() {
     setRfEdges(mappedEdges);
   }, [storeNodes, storeEdges, selectedNodeId, playbackTime]);
 
+  if (storeNodes.length === 0) {
+    return (
+      <div className="w-full h-[540px] rounded-2xl border border-outline-variant/30 bg-surface-container-low overflow-hidden relative flex flex-col items-center justify-center p-8 text-center">
+        {/* Subtle decorative grid background for high-tech premium feel */}
+        <div className="absolute inset-0 opacity-[0.1] pointer-events-none" style={{ backgroundImage: "radial-gradient(rgba(37, 99, 235, 0.15) 1px, transparent 0)", backgroundSize: "24px 24px" }} />
+        
+        {/* Glowing network hub icon */}
+        <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-6 text-primary shadow-[0_0_30px_rgba(37,99,235,0.15)] animate-pulse">
+          <span className="material-symbols-outlined text-3xl">hub</span>
+        </div>
+        
+        <h3 className="text-base font-bold text-on-surface mb-2 font-display uppercase tracking-wider">
+          No Statement Selected
+        </h3>
+        
+        <p className="text-xs text-on-surface-variant max-w-sm leading-relaxed mb-8">
+          To visualize financial routes, entity links, and device sharing patterns, please select a statement from the Ingestion History or upload a new one.
+        </p>
+
+        <a 
+          href="/dashboard"
+          className="px-5 py-2.5 bg-primary hover:bg-primary-fixed text-on-primary text-xs font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 hover:scale-[1.02]"
+        >
+          <span className="material-symbols-outlined text-sm">dashboard</span>
+          Go to Dashboard
+        </a>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full rounded-2xl border border-outline-variant/30 bg-surface-container-low overflow-hidden relative flex flex-col">
       {/* Top Legend and Controls Bar */}

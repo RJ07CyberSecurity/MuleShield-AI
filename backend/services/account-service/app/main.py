@@ -37,6 +37,10 @@ async def lifespan(app: FastAPI):
         async with db_manager._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables verified and created in Account Service")
+        
+        # Seed account data
+        await seed_account_data()
+        
         if not settings.USE_SQLITE:
             logger.info("Connection pool successfully established")
     except Exception as exc:
@@ -96,7 +100,7 @@ async def seed_account_data() -> None:
         from app.models.alert import Alert, Rule
         from sqlalchemy import select
         # check if accounts exist
-        result = await session.execute(select(Account))
+        result = await session.execute(select(Account).where(Account.account_number == "1000000001"))
         if result.scalars().first() is not None:
             return
         logger.info("Seeding default bank accounts, rules, and alerts...")

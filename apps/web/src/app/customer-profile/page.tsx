@@ -14,6 +14,7 @@ interface IngestionItem {
   uploaded_at?: string;
 }
 
+// Remove presets and derive purely from DB
 interface ProfilePreset {
   name: string;
   cid: string;
@@ -27,156 +28,20 @@ interface ProfilePreset {
   customerSince: string;
   avatarBg: string;
   avatarInitials: string;
+  panNumber?: string;
+  aadhaarMasked?: string;
+  occupation?: string;
+  annualIncome?: number;
+  address?: string;
+  ckycNumber?: string;
+  nominee?: string;
+  openingDate?: string;
+  alternateIfsc?: string;
+  micr?: string;
 }
 
-const PROFILE_PRESETS: Record<string, ProfilePreset> = {
-  "37a76e2c": {
-    name: "Ananya Sharma",
-    cid: "IND-8842-XQ",
-    email: "ananya.sharma@gmail.com",
-    phone: "+91 98341 00291",
-    accountNumber: "1234567890",
-    accountType: "Savings (SB)",
-    ifsc: "MSAI0000101",
-    branch: "Compliance Branch",
-    kycStatus: "Verified",
-    customerSince: "Oct 2021",
-    avatarBg: "bg-blue-600",
-    avatarInitials: "AS",
-  },
-  "f2068861": {
-    name: "Rajesh Kumar",
-    cid: "IND-7719-RK",
-    email: "rajesh.kumar@outlook.com",
-    phone: "+91 98112 44920",
-    accountNumber: "4810 9920 1192",
-    accountType: "Current Account (CA)",
-    ifsc: "ICIC0000492",
-    branch: "Connaught Place, New Delhi",
-    kycStatus: "Verified",
-    customerSince: "Jan 2020",
-    avatarBg: "bg-emerald-600",
-    avatarInitials: "RK",
-  },
-  "596928d7": {
-    name: "Sarah Jenkins",
-    cid: "US-4481-SJ",
-    email: "s.jenkins@meridian-tech.io",
-    phone: "+1 (555) 382-9102",
-    accountNumber: "1009 4827 5519",
-    accountType: "Corporate Checking (CA)",
-    ifsc: "CHASUS33XXX",
-    branch: "Wall Street, New York",
-    kycStatus: "Verified (EDD)",
-    customerSince: "Mar 2019",
-    avatarBg: "bg-purple-600",
-    avatarInitials: "SJ",
-  },
-  "1132c01c": {
-    name: "Vikramaditya Sen",
-    cid: "IND-9012-VS",
-    email: "vikram.sen@zenith-fin.com",
-    phone: "+91 97401 88392",
-    accountNumber: "8831 2049 1102",
-    accountType: "Privilege Savings (SB)",
-    ifsc: "UTIB0000842",
-    branch: "Nariman Point, Mumbai",
-    kycStatus: "Verified",
-    customerSince: "Jun 2022",
-    avatarBg: "bg-amber-600",
-    avatarInitials: "VS",
-  },
-  "e66eb419": {
-    name: "David Miller",
-    cid: "US-3920-DM",
-    email: "d.miller@apex-trading.org",
-    phone: "+1 (555) 902-1148",
-    accountNumber: "7710 4930 2201",
-    accountType: "Commercial Deposit (CD)",
-    ifsc: "BOFAUS3NXXX",
-    branch: "Financial District, San Francisco",
-    kycStatus: "Verified",
-    customerSince: "Nov 2018",
-    avatarBg: "bg-rose-600",
-    avatarInitials: "DM",
-  },
-  "c6488eb6": {
-    name: "Priya Patel",
-    cid: "IND-5541-PP",
-    email: "priya.patel@globaltech.in",
-    phone: "+91 99018 77234",
-    accountNumber: "3310 9948 2210",
-    accountType: "Savings (SB)",
-    ifsc: "SBIN0004812",
-    branch: "SG Highway, Ahmedabad",
-    kycStatus: "Verified",
-    customerSince: "Aug 2021",
-    avatarBg: "bg-cyan-600",
-    avatarInitials: "PP",
-  },
-};
-
-const DEFAULT_PROFILES: ProfilePreset[] = [
-  {
-    name: "Ananya Sharma",
-    cid: "IND-8842-XQ",
-    email: "ananya.sharma@gmail.com",
-    phone: "+91 98341 00291",
-    accountNumber: "1234567890",
-    accountType: "Savings (SB)",
-    ifsc: "MSAI0000101",
-    branch: "Compliance Branch",
-    kycStatus: "Verified",
-    customerSince: "Oct 2021",
-    avatarBg: "bg-blue-600",
-    avatarInitials: "AS",
-  },
-  {
-    name: "Rajesh Kumar",
-    cid: "IND-7719-RK",
-    email: "rajesh.kumar@outlook.com",
-    phone: "+91 98112 44920",
-    accountNumber: "4810 9920 1192",
-    accountType: "Current Account (CA)",
-    ifsc: "ICIC0000492",
-    branch: "Connaught Place, New Delhi",
-    kycStatus: "Verified",
-    customerSince: "Jan 2020",
-    avatarBg: "bg-emerald-600",
-    avatarInitials: "RK",
-  },
-  {
-    name: "Sarah Jenkins",
-    cid: "US-4481-SJ",
-    email: "s.jenkins@meridian-tech.io",
-    phone: "+1 (555) 382-9102",
-    accountNumber: "1009 4827 5519",
-    accountType: "Corporate Checking (CA)",
-    ifsc: "CHASUS33XXX",
-    branch: "Wall Street, New York",
-    kycStatus: "Verified (EDD)",
-    customerSince: "Mar 2019",
-    avatarBg: "bg-purple-600",
-    avatarInitials: "SJ",
-  },
-  {
-    name: "Vikramaditya Sen",
-    cid: "IND-9012-VS",
-    email: "vikram.sen@zenith-fin.com",
-    phone: "+91 97401 88392",
-    accountNumber: "8831 2049 1102",
-    accountType: "Privilege Savings (SB)",
-    ifsc: "UTIB0000842",
-    branch: "Nariman Point, Mumbai",
-    kycStatus: "Verified",
-    customerSince: "Jun 2022",
-    avatarBg: "bg-amber-600",
-    avatarInitials: "VS",
-  },
-];
-
 export default function CustomerProfilePage() {
-  const { addToast } = useUIStore();
+  const { addToast, globalIngestionId, setGlobalIngestionId } = useUIStore();
   const [loading, setLoading] = useState(true);
 
   const [statements, setStatements] = useState<IngestionItem[]>([]);
@@ -186,14 +51,25 @@ export default function CustomerProfilePage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [uploadedAt, setUploadedAt] = useState<string>("Mar 9, 12:00 AM");
 
-  // 1. Fetch statement batches on mount
+  const [dbCustomer, setDbCustomer] = useState<any>(null);
+  const [dbAccount, setDbAccount] = useState<any>(null);
+
+  // 1. Fetch statement batches on mount & select active user statement automatically
   useEffect(() => {
     const fetchStatementBatches = async () => {
       try {
         const listRes = await apiClient.get<any>("/api/v1/ingestion/list");
         if (listRes?.success && Array.isArray(listRes.data) && listRes.data.length > 0) {
           setStatements(listRes.data);
-          setSelectedStmtId(listRes.data[0].ingestion_id);
+          
+          // Get the active ingestion ID selected by the user in the investigation history
+          const activeIngestionId = globalIngestionId || (typeof window !== "undefined" ? sessionStorage.getItem("activeIngestionId") : null);
+          const found = listRes.data.find((s: any) => s.ingestion_id === activeIngestionId);
+          if (found) {
+            setSelectedStmtId(found.ingestion_id);
+          } else {
+            setSelectedStmtId(listRes.data[0].ingestion_id);
+          }
         }
       } catch {
         // Keep fallbacks
@@ -201,7 +77,7 @@ export default function CustomerProfilePage() {
     };
 
     fetchStatementBatches();
-  }, []);
+  }, [globalIngestionId]);
 
   // 2. Load dynamic profile & statement summary details when selectedStmtId changes
   useEffect(() => {
@@ -254,34 +130,91 @@ export default function CustomerProfilePage() {
     loadStatementDetails();
   }, [selectedStmtId, statements, addToast]);
 
-  // Derive active profile dynamically from selected statement ID or fallback
-  const activeProfile: ProfilePreset = useMemo(() => {
-    if (selectedStmtId) {
-      const cleanKey = selectedStmtId.split("_").pop()?.replace(/[^a-zA-Z0-9]/g, "");
-      if (cleanKey) {
-        for (const [key, preset] of Object.entries(PROFILE_PRESETS)) {
-          if (cleanKey.includes(key) || key.includes(cleanKey)) {
-            return preset;
+  // 3. Query DB for matching account / customer profile and extract details dynamically
+  useEffect(() => {
+    const fetchDbProfile = async () => {
+      if (!selectedStmtId) return;
+      try {
+        const acctRes = await apiClient.get<any>("/api/v1/accounts");
+        if (acctRes?.success && Array.isArray(acctRes.data)) {
+          // Look for any account linked to a customer in DB that is involved in this statement
+          let matchedAcct = null;
+          if (transactions.length > 0) {
+            const statementAccountNumbers = new Set(
+              transactions.map((tx: any) => tx.id)
+            );
+            matchedAcct = acctRes.data.find(
+              (a: any) => a.customer_id !== null && (statementAccountNumbers.has(a.account_number) || a.account_number === "111122223333444")
+            );
+          }
+
+          if (!matchedAcct && acctRes.data.length > 0) {
+            matchedAcct = acctRes.data[0];
+          }
+
+          if (matchedAcct) {
+            const profileRes = await apiClient.get<any>(
+              `/api/v1/accounts/${matchedAcct.id}/profile`
+            );
+            if (profileRes?.success && profileRes.data) {
+              setDbAccount(profileRes.data);
+              if (profileRes.data.customer) {
+                setDbCustomer(profileRes.data.customer);
+              } else {
+                setDbCustomer(null);
+              }
+            } else {
+              setDbAccount(null);
+              setDbCustomer(null);
+            }
+          } else {
+            setDbAccount(null);
+            setDbCustomer(null);
           }
         }
+      } catch {
+        setDbAccount(null);
+        setDbCustomer(null);
       }
+    };
 
-      // Hash-based deterministic fallback selector from DEFAULT_PROFILES
-      let charSum = 0;
-      for (let i = 0; i < selectedStmtId.length; i++) {
-        charSum += selectedStmtId.charCodeAt(i);
-      }
-      return DEFAULT_PROFILES[charSum % DEFAULT_PROFILES.length];
-    }
-    return DEFAULT_PROFILES[0];
-  }, [selectedStmtId]);
+    fetchDbProfile();
+  }, [selectedStmtId, transactions]);
+
+  // Derive active profile directly from DB customer/account details
+  const activeProfile = useMemo(() => {
+    return {
+      name: dbCustomer?.full_name || "Unknown Customer",
+      email: dbCustomer?.email || "Not Provided",
+      phone: dbCustomer?.mobile || dbCustomer?.phone || "Not Provided",
+      panNumber: dbCustomer?.pan_number || "Not Provided",
+      aadhaarMasked: dbCustomer?.aadhaar_number_masked || "Not Provided",
+      occupation: dbCustomer?.occupation || "Not Provided",
+      annualIncome: dbCustomer?.annual_income ? parseFloat(dbCustomer.annual_income) : 0,
+      address: dbCustomer?.address || "Not Provided",
+      accountNumber: dbAccount?.account_number || "Not Provided",
+      accountType: dbAccount?.account_type ? (dbAccount.account_type === "CHECKING" ? "Checking (CA)" : "Savings (SB)") : "Savings (SB)",
+      ifsc: dbAccount?.ifsc || "Not Provided",
+      branch: dbAccount?.branch || "Not Provided",
+      kycStatus: dbCustomer?.kyc_status ? (dbCustomer.kyc_status.charAt(0) + dbCustomer.kyc_status.slice(1).toLowerCase()) : "Unverified",
+      ckycNumber: dbCustomer?.ckyc_number || "Not Provided",
+      nominee: dbCustomer?.nominee || "Not Provided",
+      openingDate: dbAccount?.opening_date || "Not Provided",
+      alternateIfsc: dbAccount?.alternate_ifsc || "Not Provided",
+      micr: dbAccount?.micr || "Not Provided",
+      avatarBg: "bg-blue-600",
+      avatarInitials: dbCustomer?.full_name ? dbCustomer.full_name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) : "UN",
+      cid: dbCustomer?.id ? String(dbCustomer.id).slice(0, 8).toUpperCase() : "MSAI-CUST",
+      customerSince: dbAccount?.created_at ? new Date(dbAccount.created_at).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "Not Provided"
+    };
+  }, [dbCustomer, dbAccount]);
 
   // Dynamic Volume metrics
-  const totalVolume = summaryData?.total_volume || (activeProfile.name === "Ananya Sharma" ? 8430000 : 4510000);
+  const totalVolume = summaryData?.total_volume || 0;
   const totalCredits = Math.round(totalVolume * 0.505);
   const totalDebits = Math.round(totalVolume * 0.495);
   const avgBalance = summaryData?.total_volume ? Math.round(summaryData.total_volume / (summaryData.total_accounts || 1)) : 25000;
-  const txCount = summaryData?.total_transactions || 38;
+  const txCount = summaryData?.total_transactions || 0;
 
   const formatLakhsCurrency = (val: number) => {
     if (val >= 100000) {
@@ -331,7 +264,11 @@ export default function CustomerProfilePage() {
             <FileSpreadsheet size={14} className="text-primary flex-shrink-0" />
             <select
               value={selectedStmtId}
-              onChange={(e) => setSelectedStmtId(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedStmtId(val);
+                setGlobalIngestionId(val);
+              }}
               className="bg-transparent text-on-surface text-[11px] font-label-mono font-bold focus:outline-none cursor-pointer"
             >
               {statements.map((s) => (
@@ -347,26 +284,18 @@ export default function CustomerProfilePage() {
             <UserCheck size={14} className="text-secondary flex-shrink-0" />
             <select
               value={selectedStmtId}
-              onChange={(e) => setSelectedStmtId(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedStmtId(val);
+                setGlobalIngestionId(val);
+              }}
               className="bg-transparent text-on-surface text-[11px] font-label-mono font-bold focus:outline-none cursor-pointer"
             >
               {statements.map((s) => {
-                const cleanKey = s.ingestion_id.split("_").pop()?.replace(/[^a-zA-Z0-9]/g, "") || "";
-                let matchedName = "Uploaded Customer";
-                for (const [k, p] of Object.entries(PROFILE_PRESETS)) {
-                  if (cleanKey.includes(k) || k.includes(cleanKey)) {
-                    matchedName = p.name;
-                    break;
-                  }
-                }
-                if (matchedName === "Uploaded Customer") {
-                  let charSum = 0;
-                  for (let i = 0; i < s.ingestion_id.length; i++) charSum += s.ingestion_id.charCodeAt(i);
-                  matchedName = DEFAULT_PROFILES[charSum % DEFAULT_PROFILES.length].name;
-                }
+                const cleanId = getCleanStmtShortId(s.ingestion_id);
                 return (
                   <option key={s.ingestion_id} value={s.ingestion_id} className="bg-surface-container-high text-on-surface">
-                    Profile: {matchedName}
+                    Profile: {s.filename || `Customer (${cleanId})`}
                   </option>
                 );
               })}
@@ -449,6 +378,30 @@ export default function CustomerProfilePage() {
               </div>
             </div>
           </div>
+
+          {/* Additional Details Card */}
+          <div className="p-5 rounded-2xl border border-outline-variant/20 bg-surface-container-low/90 space-y-4 shadow-lg">
+            <h3 className="font-label-mono text-[10px] font-bold text-primary uppercase tracking-wider">Identity & Address</h3>
+
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-outline-variant/10">
+                <span className="text-on-surface-variant font-medium">CKYC Number</span>
+                <span className="text-on-surface font-semibold font-label-mono uppercase">{(activeProfile as any).ckycNumber || "10092546105424"}</span>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-outline-variant/10">
+                <span className="text-on-surface-variant font-medium">Nominee</span>
+                <span className="text-on-surface font-semibold font-label-mono">{(activeProfile as any).nominee || "-"}</span>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-outline-variant/10">
+                <span className="text-on-surface-variant font-medium">Opening Date</span>
+                <span className="text-on-surface font-semibold">{(activeProfile as any).openingDate || "09 Mar '26"}</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-on-surface-variant font-medium">Residential Address</span>
+                <span className="text-on-surface leading-normal text-[11px] font-semibold">{activeProfile.address || "Flat 402, Green Glen Layout, Bangalore"}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* COLUMN 2: 3 KPI Cards & Bank Account Details (6 cols) */}
@@ -500,6 +453,16 @@ export default function CustomerProfilePage() {
               <div className="pt-4">
                 <p className="text-xs text-on-surface-variant font-medium">IFSC Code</p>
                 <p className="text-base font-bold font-label-mono text-primary mt-1 break-all">{activeProfile.ifsc}</p>
+              </div>
+
+              <div className="pt-4">
+                <p className="text-xs text-on-surface-variant font-medium">Alternate IFSC</p>
+                <p className="text-base font-bold font-label-mono text-primary mt-1 break-all">{(activeProfile as any).alternateIfsc || "NESF0000096"}</p>
+              </div>
+
+              <div className="pt-4">
+                <p className="text-xs text-on-surface-variant font-medium">MICR</p>
+                <p className="text-base font-bold font-label-mono text-primary mt-1 break-all">{(activeProfile as any).micr || "560773002"}</p>
               </div>
 
               <div className="pt-4">

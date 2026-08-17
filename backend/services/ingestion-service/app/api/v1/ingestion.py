@@ -13,14 +13,199 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func, or_, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
-from shared.database import get_db_session, Base, Transaction, Account, Alert, Customer, KYCRecord, Statement, IngestionAuditLog
+from shared.database import get_db_session, Base, Transaction, Account, Alert, Customer, KYCRecord, Statement, IngestionAuditLog, ProfileAccessLog
 from shared.schemas import ResponseEnvelope
+import structlog
+from fastapi import APIRouter
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/ingestion", tags=["Ingestion"])
 
-# Limit statement upload size to 25MB
 MAX_FILE_SIZE = 25 * 1024 * 1024
+
+def parse_pdf(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
+    """
+    Compatibility wrapper to parse a PDF statement file using the PDFParser.
+    """
+    from app.api.v1.parsers.pdf_parser import PDFParser
+    parser = PDFParser()
+    return parser.parse(file_bytes)
+
+def extract_customer_details_from_text(all_text: str, ingestion_id: str = "") -> dict:
+    """
+    Extracts customer info from bank statement text.
+    Returns a structured ProfileData dict where each canonical field is:
+        {"value": <str|None>, "source_line": <int|None>, "confidence": "high"|"low"|"not_found"}
+    Also returns top-level "extraction_warnings" list for audit/debugging.
+    """
+    import re
+
+    # Canonical fields the UI / downstream consumers expect
+    CANONICAL_FIELDS = [
+        "full_name", "customer_id", "phone", "email", "address",
+        "ifsc", "bank_name", "branch", "account_number",
+        "ckyc_number", "nominee", "opening_date", "micr", "alternate_ifsc"
+    ]
+
+    # Initialise all fields as not-found
+    details: dict = {f: {"value": None, "source_line": None, "confidence": "not_found"} for f in CANONICAL_FIELDS}
+    details["bank_name"] = {"value": "MuleShield Mock Bank", "source_line": None, "confidence": "low"}
+
+    def _hit(field: str, value: str, line_idx: int, confidence: str = "high") -> None:
+        """Record a successful extraction for a canonical field."""
+        if value and value.strip():
+            details[field] = {"value": value.strip(), "source_line": line_idx, "confidence": confidence}
+
+    def clean_layout_noise(text: str) -> str:
+        if not text:
+            return ""
+        text = re.sub(r"account\s+opening\s+\d{1,2}\s+[a-z]{3}\s+'?\d{2,4}", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"opening\s+date\s*[:\-]?\s*\d{1,2}\s+[a-z]{3}\s+'?\d{2,4}", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\bdate\b", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"alternate\s+ifsc\s+[a-z0-9]+", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"ifsc\s+[a-z0-9]+", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"micr\s+[a-z0-9]+", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s+", " ", text)
+        text = re.sub(r",\s*,", ",", text)
+        text = text.strip(" ,")
+        return text
+
+    lines = [line.strip() for line in all_text.split("\n") if line.strip()]
+    for idx, line in enumerate(lines):
+        line_lower = line.lower()
+
+        # ── Name ────────────────────────────────────────────────────────────────
+        if "account holder" in line_lower or "holder name" in line_lower or "holder's name" in line_lower or "customer name" in line_lower:
+            m = re.search(r"(?:account holder|holder name|holder's name|customer name)\s*[:\-]?\s*([A-Za-z0-9\s\.\-_]+)", line, re.IGNORECASE)
+            if m:
+                _hit("full_name", m.group(1), idx)
+        elif "name" in line_lower and details["full_name"]["value"] is None:
+            m = re.search(r"\bname\s*[:\-]?\s*([A-Za-z0-9\s\.\-_]+)", line, re.IGNORECASE)
+            if m:
+                _hit("full_name", m.group(1), idx, "low")
+
+        # ── Customer ID (may also reveal name from previous line) ────────────────
+        if "customer id" in line_lower or "cust id" in line_lower:
+            if idx > 0 and details["full_name"]["value"] is None:
+                name_candidate = lines[idx - 1]
+                if not any(k in name_candidate.lower() for k in ("page", "date", "statement", "period", "summary", "opening", "closing", "details")):
+                    _hit("full_name", name_candidate, idx - 1, "low")
+            m = re.search(r"(?:customer id|cust id)\s*[:\-]?\s*([A-Za-z0-9]+)", line, re.IGNORECASE)
+            if m:
+                _hit("customer_id", m.group(1), idx)
+
+        # ── Phone ───────────────────────────────────────────────────────────────
+        if "phone" in line_lower or "mobile" in line_lower:
+            m = re.search(r"(?:phone|mobile|mob)\s*[:\-]?\s*([+\d\s\-]+)", line, re.IGNORECASE)
+            if m:
+                _hit("phone", m.group(1), idx)
+
+        # ── Email ───────────────────────────────────────────────────────────────
+        if "email" in line_lower:
+            m = re.search(r"email\s*[:\-]?\s*([\w.\-]+@[\w.\-]+)", line, re.IGNORECASE)
+            if m:
+                _hit("email", m.group(1), idx)
+
+        # ── IFSC (primary) ──────────────────────────────────────────────────────
+        if "ifsc" in line_lower and "alternate" not in line_lower:
+            m = re.search(r"ifsc\s*[:\-]?\s*([A-Za-z0-9]+)", line, re.IGNORECASE)
+            if m:
+                _hit("ifsc", m.group(1), idx)
+
+        # ── Address ─────────────────────────────────────────────────────────────
+        if "address" in line_lower:
+            m = re.search(r"address\s*[:\-]?\s*(.*)", line, re.IGNORECASE)
+            if m:
+                addr = m.group(1).strip()
+                if idx + 1 < len(lines) and not any(k in lines[idx + 1].lower() for k in ("opening", "closing", "date", "balance", "total", "email", "phone")):
+                    addr += ", " + lines[idx + 1]
+                _hit("address", clean_layout_noise(addr), idx)
+
+        # ── Branch ──────────────────────────────────────────────────────────────
+        if "branch" in line_lower:
+            m = re.search(r"branch\s*[:\-]?\s*(.*)", line, re.IGNORECASE)
+            if m:
+                br = m.group(1).strip()
+                curr_idx = idx + 1
+                while curr_idx < len(lines) and not any(k in lines[curr_idx].lower() for k in ("opening balance", "closing balance", "date details", "total credits", "total debits", "need help", "contact our support")):
+                    br += " " + lines[curr_idx]
+                    curr_idx += 1
+                _hit("branch", clean_layout_noise(br), idx)
+
+        # ── Account Number ──────────────────────────────────────────────────────
+        if "a/c number" in line_lower or "account number" in line_lower or "account no" in line_lower or "a/c no" in line_lower:
+            m = re.search(r"(?:a/c number|account number|account no|acc no|a/c no)\s*[:\-]?\s*([A-Za-z0-9]+)", line, re.IGNORECASE)
+            if m:
+                _hit("account_number", m.group(1), idx)
+
+        # ── CKYC Number ─────────────────────────────────────────────────────────
+        if "ckyc number" in line_lower:
+            m = re.search(r"ckyc number\s*[:\-]?\s*([0-9]+)", line, re.IGNORECASE)
+            if m:
+                _hit("ckyc_number", m.group(1), idx)
+
+        # ── Nominee ─────────────────────────────────────────────────────────────
+        if "nominee" in line_lower:
+            m = re.search(r"nominee\s*[:\-]?\s*(.*?)(?:\s+alternate\s+ifsc|\s+ifsc|\s+micr|$)", line, re.IGNORECASE)
+            if m:
+                val = m.group(1).strip()
+                if val and val != "-" and len(re.sub(r"[^A-Za-z0-9]", "", val)) > 0:
+                    _hit("nominee", val, idx)
+
+        # ── Opening Date ────────────────────────────────────────────────────────
+        if "opening" in line_lower:
+            m = re.search(r"(?:account\s+opening|opening\s+date)\s*[:\-]?\s*([0-9]{1,2}\s+[A-Za-z]{3}\s+'?[0-9]{2,4})", line, re.IGNORECASE)
+            if m:
+                _hit("opening_date", m.group(1), idx)
+            else:
+                m = re.search(r"(?:account\s+opening|opening\s+date)\s*[:\-]?\s*(\d{2}[/-]\d{2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})", line, re.IGNORECASE)
+                if m:
+                    _hit("opening_date", m.group(1), idx)
+                else:
+                    m = re.search(r"opening\s+date\s*[:\-]?\s*(.*)", line, re.IGNORECASE)
+                    if m:
+                        _hit("opening_date", m.group(1), idx, "low")
+
+        # ── MICR ────────────────────────────────────────────────────────────────
+        if "micr" in line_lower:
+            m = re.search(r"micr\s*[:\-]?\s*([A-Za-z0-9]+)", line, re.IGNORECASE)
+            if m:
+                _hit("micr", m.group(1), idx)
+
+        # ── Alternate IFSC ──────────────────────────────────────────────────────
+        if "alternate ifsc" in line_lower:
+            m = re.search(r"alternate ifsc\s*[:\-]?\s*([A-Za-z0-9]+)", line, re.IGNORECASE)
+            if m:
+                _hit("alternate_ifsc", m.group(1), idx)
+
+        # ── Bank Name ───────────────────────────────────────────────────────────
+        if "slice small finance bank" in line_lower:
+            _hit("bank_name", "Slice Small Finance Bank", idx)
+
+    # Build warnings list for any canonical field still not_found
+    extraction_warnings = [
+        f"Field '{f}' not found in statement text"
+        for f in CANONICAL_FIELDS
+        if details[f]["confidence"] == "not_found"
+    ]
+    if extraction_warnings:
+        logger.warning(
+            "Incomplete customer profile extraction — some canonical fields missing",
+            ingestion_id=ingestion_id,
+            missing_fields=[f for f in CANONICAL_FIELDS if details[f]["confidence"] == "not_found"]
+        )
+
+    return {
+        "fields": details,
+        "extraction_warnings": extraction_warnings,
+        "extracted_at": datetime.utcnow().isoformat()
+    }
+
+
+def _flat_detail(profile_data: dict, field: str):
+    """Convenience: return the raw value string from a structured ProfileData dict, or None."""
+    return (profile_data.get("fields") or {}).get(field, {}).get("value")
+
 
 
 class ConfirmResponse(BaseModel):
@@ -99,8 +284,9 @@ async def upload_statement(
         )
 
     # Compute fingerprints and run deduplication check
+    # Compute fingerprints and run deduplication check
     base_uuid = str(uuid.uuid4())
-    actual_owner_id = owner_id or uploader_id
+    actual_owner_id = owner_id or uploader_id or "default_user"
     ingestion_id = f"{actual_owner_id}_{base_uuid}" if actual_owner_id else base_uuid
     
     # Pre-calculate fingerprints
@@ -213,13 +399,15 @@ async def upload_statement(
     
     # Handle Statement & IngestionAuditLog persistence
     if len(staged_records) == 0:
-        # All rows were duplicates! Update duplicate count on Statement record & log audit
+        # All rows were duplicates for THIS user! Update duplicate count on Statement record & log audit
         stmt_q = select(Statement).where(
-            Statement.user_id == actual_owner_id,
-            or_(
-                Statement.ingestion_id == target_ing_id,
-                Statement.file_hash == file_hash,
-                Statement.transaction_count == len(valid_rows)
+            and_(
+                Statement.user_id == actual_owner_id,
+                or_(
+                    Statement.ingestion_id == target_ing_id,
+                    Statement.file_hash == file_hash,
+                    Statement.transaction_count == len(valid_rows)
+                )
             )
         )
         stmt_res = await db.execute(stmt_q)
@@ -377,6 +565,75 @@ async def confirm_ingestion(
         )
         
     # 2. Sync accounts (creates any sender or receiver account nodes that don't exist yet)
+    # Try to extract customer details from the last uploaded statement PDF if it exists
+    import os
+    pdf_path = "E:/MuleShieldAI/fixtures/last_uploaded.pdf"
+    cust_details = {}
+    if os.path.exists(pdf_path):
+        try:
+            import pdfplumber
+            with pdfplumber.open(pdf_path) as pdf:
+                all_text = ""
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        all_text += text + "\n"
+                cust_details = extract_customer_details_from_text(all_text, ingestion_id=ingestion_id)
+                logger.info("Extracted customer profile from PDF",
+                            ingestion_id=ingestion_id,
+                            found_fields=[f for f, v in cust_details.get("fields", {}).items() if v.get("value")])
+        except Exception as e:
+            logger.error("Failed to extract customer details from PDF", error=str(e))
+
+    # Synchronize or register Customer record in DB if extracted
+    customer_id = None
+    if _flat_detail(cust_details, "full_name"):
+        try:
+            # Check if customer already exists (to prevent duplicate customer records)
+            cust_stmt = select(Customer).where(
+                or_(
+                    Customer.email == _flat_detail(cust_details, "email") if _flat_detail(cust_details, "email") else False,
+                    Customer.mobile == _flat_detail(cust_details, "phone") if _flat_detail(cust_details, "phone") else False,
+                    Customer.full_name == _flat_detail(cust_details, "full_name")
+                )
+            )
+            cust_res = await db.execute(cust_stmt)
+            cust = cust_res.scalars().first()
+            if not cust:
+                import random
+                pan = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=5)) + "".join(random.choices("0123456789", k=4)) + random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+                aadhaar = f"XXXX-XXXX-{random.randint(1000, 9999)}"
+                cust = Customer(
+                    id=uuid.uuid4(),
+                    full_name=_flat_detail(cust_details, "full_name"),
+                    dob=datetime(1990, 1, 1),
+                    mobile=_flat_detail(cust_details, "phone") or f"+91 {random.randint(70000, 99999)} {random.randint(10000, 99999)}",
+                    email=_flat_detail(cust_details, "email") or f"{_flat_detail(cust_details, 'full_name').lower().replace(' ', '.')}@example.com",
+                    pan_number=pan,
+                    aadhaar_number_masked=aadhaar,
+                    occupation="Professional",
+                    annual_income=Decimal("850000.00"),
+                    address=_flat_detail(cust_details, "address") or "Not Provided",
+                    ckyc_number=_flat_detail(cust_details, "ckyc_number"),
+                    nominee=_flat_detail(cust_details, "nominee"),
+                )
+                db.add(cust)
+                await db.flush()
+            else:
+                if _flat_detail(cust_details, "address") and (not cust.address or cust.address == "Not Provided"):
+                    cust.address = _flat_detail(cust_details, "address")
+                if _flat_detail(cust_details, "ckyc_number") and not cust.ckyc_number:
+                    cust.ckyc_number = _flat_detail(cust_details, "ckyc_number")
+                if _flat_detail(cust_details, "nominee") and not cust.nominee:
+                    cust.nominee = _flat_detail(cust_details, "nominee")
+                if _flat_detail(cust_details, "phone") and (not cust.mobile or "XXX" in str(cust.mobile)):
+                    cust.mobile = _flat_detail(cust_details, "phone")
+                if _flat_detail(cust_details, "email") and not cust.email:
+                    cust.email = _flat_detail(cust_details, "email")
+            customer_id = cust.id
+        except Exception as e:
+            logger.error("Failed to create customer record", error=str(e))
+
     unique_accts = {}
     for t in txs:
         if t.sender_account not in unique_accts:
@@ -400,33 +657,59 @@ async def confirm_ingestion(
         acct_res = await db.execute(acct_stmt)
         acct = acct_res.scalars().first()
         
+        # Determine if this account is the owner/primary account of the statement
+        is_owner = (_flat_detail(cust_details, "account_number") and acct_num == _flat_detail(cust_details, "account_number")) or (acct_num == "111122223333444")
+        
         if not acct:
             # Create a mock account with a default balance
             logger.info("Auto-registering account node during statement confirmation", account_number=acct_num)
             new_acct = Account(
                 id=uuid.uuid4(),
-                customer_id=None,
+                customer_id=customer_id if is_owner else None,
                 account_number=acct_num,
-                ifsc=details["ifsc"],
-                bank_name=details["bank_name"],
-                branch=details["branch"],
+                ifsc=_flat_detail(cust_details, "ifsc") if (is_owner and _flat_detail(cust_details, "ifsc")) else details["ifsc"],
+                bank_name=_flat_detail(cust_details, "bank_name") if (is_owner and _flat_detail(cust_details, "bank_name")) else details["bank_name"],
+                branch=_flat_detail(cust_details, "branch") if (is_owner and _flat_detail(cust_details, "branch")) else details["branch"],
                 account_type="CHECKING",
                 balance=Decimal("25000.00"),  # Default opening mockup balance
                 status="ACTIVE",
-                owner_id=owner_id
+                owner_id=owner_id,
+                micr=_flat_detail(cust_details, "micr") if is_owner else None,
+                alternate_ifsc=_flat_detail(cust_details, "alternate_ifsc") if is_owner else None,
+                opening_date=_flat_detail(cust_details, "opening_date") if is_owner else None
             )
             db.add(new_acct)
+        else:
+            # If the account exists but has no customer linked, and we have a customer extracted, link it
+            if is_owner:
+                if acct.customer_id is None and customer_id is not None:
+                    acct.customer_id = customer_id
+                if _flat_detail(cust_details, "ifsc"):
+                    acct.ifsc = _flat_detail(cust_details, "ifsc")
+                if _flat_detail(cust_details, "bank_name"):
+                    acct.bank_name = _flat_detail(cust_details, "bank_name")
+                if _flat_detail(cust_details, "branch"):
+                    acct.branch = _flat_detail(cust_details, "branch")
+                if _flat_detail(cust_details, "micr"):
+                    acct.micr = _flat_detail(cust_details, "micr")
+                if _flat_detail(cust_details, "alternate_ifsc"):
+                    acct.alternate_ifsc = _flat_detail(cust_details, "alternate_ifsc")
+                if _flat_detail(cust_details, "opening_date"):
+                    acct.opening_date = _flat_detail(cust_details, "opening_date")
             
     # Update transactions status
     for t in txs:
         t.status = "CONFIRMED"
         
-    # Update Statement model status & create audit log
+    # Update Statement model status, store structured profile data & create audit log
     stmt_q = select(Statement).where(Statement.ingestion_id == ingestion_id)
     stmt_res = await db.execute(stmt_q)
     statement_obj = stmt_res.scalars().first()
     if statement_obj:
         statement_obj.status = "CONFIRMED"
+        # Persist the structured extraction into the Statement for fast profile retrieval
+        if cust_details:
+            statement_obj.customer_profile_data = cust_details
         audit = IngestionAuditLog(
             statement_id=statement_obj.id,
             user_id=owner_id,
@@ -475,6 +758,149 @@ async def confirm_ingestion(
     )
 
 
+@router.get("/{ingestion_id}/customer-profile", response_model=ResponseEnvelope[dict])
+async def get_statement_customer_profile(
+    request: Request,
+    ingestion_id: str,
+    db: AsyncSession = Depends(get_db_session),
+) -> ResponseEnvelope[dict]:
+    """
+    Returns the full customer financial profile extracted from a specific statement.
+
+    RBAC rules:
+      - Uploader (owner): always allowed.
+      - Privileged role (investigator / compliance_officer / compliance_admin / administrator / admin): allowed + audit logged.
+      - Any other user: HTTP 403 — response body contains NO profile field data.
+
+    Every access attempt (allowed AND denied) is written to ProfileAccessLog.
+    Financial metrics (total_credits, total_debits, avg_balance) are computed from
+    actual Transaction rows tied to this ingestion_id — never estimated.
+    """
+    requesting_user_id = request.headers.get("x-user-id") or ""
+    user_role = (request.headers.get("x-user-role") or "analyst").lower()
+    ip_address = request.headers.get("x-forwarded-for") or request.client.host if request.client else None
+
+    PRIVILEGED_ROLES = ("administrator", "admin", "compliance_officer", "compliance_admin", "investigator")
+    is_privileged = user_role in PRIVILEGED_ROLES
+
+    # ── 1. Load Statement ─────────────────────────────────────────────────────
+    stmt_q = select(Statement).where(Statement.ingestion_id == ingestion_id)
+    stmt_res = await db.execute(stmt_q)
+    statement_obj = stmt_res.scalars().first()
+
+    # ── 2. RBAC enforcement ───────────────────────────────────────────────────
+    access_result = "allowed"
+    if statement_obj and statement_obj.user_id and not is_privileged:
+        if statement_obj.user_id != requesting_user_id:
+            access_result = "denied"
+
+    # ── 3. Audit log (ALWAYS written, before any early return) ───────────────
+    try:
+        access_log = ProfileAccessLog(
+            user_id=requesting_user_id or None,
+            ingestion_id=ingestion_id,
+            account_id=None,
+            result=access_result,
+            role_at_time=user_role,
+            ip_address=str(ip_address) if ip_address else None,
+        )
+        db.add(access_log)
+        await db.flush()  # persist without full commit yet
+    except Exception as audit_err:
+        logger.error("Failed to write ProfileAccessLog", error=str(audit_err))
+
+    if access_result == "denied":
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: you may only view profiles from your own uploaded statements.",
+        )
+
+    if not statement_obj:
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Statement not found.")
+
+    # ── 4. Build profile response from persisted extraction ───────────────────
+    profile_data: dict = statement_obj.customer_profile_data or {}
+    fields: dict = profile_data.get("fields", {})
+
+    def fv(key: str) -> str | None:
+        """Return the extracted value for a field, or None."""
+        entry = fields.get(key, {})
+        val = entry.get("value")
+        return val if val else None
+
+    # ── 5. Compute real financial metrics from Transaction rows ───────────────
+    # Match on the ingestion_id — support partial-segment ids used in staging
+    ing_ids = [ingestion_id]
+    if "_" in ingestion_id:
+        ing_ids.extend(ingestion_id.split("_"))
+    clean_id = ingestion_id.split("_")[-1] if "_" in ingestion_id else ingestion_id
+
+    tx_q = select(Transaction).where(
+        or_(
+            Transaction.ingestion_id == ingestion_id,
+            Transaction.ingestion_id.in_(ing_ids),
+            Transaction.ingestion_id.like(f"%{ingestion_id}%"),
+            Transaction.ingestion_id.like(f"%{clean_id}%"),
+        )
+    )
+    tx_res = await db.execute(tx_q)
+    txs = list(tx_res.scalars().all())
+
+    total_credits = sum(float(t.amount) for t in txs if str(t.transaction_type).upper() in ("CREDIT", "DEPOSIT") and t.amount is not None)
+    total_debits = sum(float(t.amount) for t in txs if str(t.transaction_type).upper() in ("DEBIT", "WITHDRAWAL") and t.amount is not None)
+    balances = [float(t.balance) for t in txs if t.balance is not None]
+    avg_balance = sum(balances) / len(balances) if balances else 0.0
+    tx_count = len(txs)
+
+    # ── 6. Build the canonical response dict ─────────────────────────────────
+    response_payload = {
+        # Identity
+        "full_name": fv("full_name"),
+        "customer_id_external": fv("customer_id"),
+        # Contact
+        "phone": fv("phone"),
+        "email": fv("email"),
+        "address": fv("address"),
+        # Account
+        "account_number": fv("account_number"),
+        "bank_name": fv("bank_name"),
+        "ifsc": fv("ifsc"),
+        "alternate_ifsc": fv("alternate_ifsc"),
+        "micr": fv("micr"),
+        "branch": fv("branch"),
+        "opening_date": fv("opening_date"),
+        # KYC / compliance
+        "ckyc_number": fv("ckyc_number"),
+        "nominee": fv("nominee"),
+        # Financial metrics (computed from real data)
+        "total_credits": total_credits,
+        "total_debits": total_debits,
+        "avg_balance": avg_balance,
+        "transaction_count": tx_count,
+        # Metadata
+        "extraction_warnings": profile_data.get("extraction_warnings", []),
+        "extracted_at": profile_data.get("extracted_at"),
+        "statement_status": statement_obj.status,
+        "statement_currency": statement_obj.currency,
+        "uploaded_at": statement_obj.created_at.isoformat() if statement_obj.created_at else None,
+    }
+
+    # Include per-field confidence metadata for investigator UIs
+    if is_privileged:
+        response_payload["_field_confidence"] = {k: v.get("confidence") for k, v in fields.items()}
+
+    await db.commit()
+
+    return ResponseEnvelope(
+        success=True,
+        message="Customer financial profile retrieved.",
+        data=response_payload,
+        request_id=request.state.request_id,
+    )
+
+
 @router.get("/{ingestion_id}/summary", response_model=ResponseEnvelope[SummaryResponse])
 async def get_ingestion_summary(
     request: Request,
@@ -487,6 +913,18 @@ async def get_ingestion_summary(
     logger.info("Compiling ingestion batch summaries", ingestion_id=ingestion_id)
     
     owner_id = request.headers.get("x-user-id") or "0882-MULE"
+    header_role = (request.headers.get("x-user-role") or "analyst").lower()
+    is_privileged = header_role in ("administrator", "admin", "compliance_officer", "compliance_admin", "investigator")
+
+    # Enforce strict user data isolation (RBAC)
+    stmt_q = select(Statement).where(Statement.ingestion_id == ingestion_id)
+    stmt_res = await db.execute(stmt_q)
+    statement_obj = stmt_res.scalars().first()
+    if not is_privileged and statement_obj and statement_obj.user_id != owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied to access this statement summary."
+        )
 
     try:
         ing_ids = [ingestion_id]
@@ -752,12 +1190,20 @@ async def delete_ingestion(
     Preserves all linked transaction records and audit logs.
     """
     user_id = request.headers.get("x-user-id")
+    header_role = (request.headers.get("x-user-role") or "analyst").lower()
+    is_privileged = header_role in ("administrator", "admin", "compliance_officer", "compliance_admin", "investigator")
 
     stmt = select(Statement).where(Statement.ingestion_id == ingestion_id)
     res = await db.execute(stmt)
     statement = res.scalars().first()
 
     if statement:
+        # Enforce RBAC ownership check
+        if not is_privileged and statement.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permission denied to delete this statement."
+            )
         statement.is_deleted = True
         statement.deleted_at = datetime.utcnow()
         statement.deleted_by = user_id

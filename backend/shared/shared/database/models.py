@@ -23,6 +23,8 @@ class Customer(Base):
     occupation: Mapped[str] = mapped_column(String(100), nullable=False)
     annual_income: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=2), nullable=False)
     address: Mapped[str] = mapped_column(EncryptedString(500), nullable=False)
+    ckyc_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    nominee: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # Relationships
     kyc_records: Mapped[list["KYCRecord"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
@@ -77,6 +79,9 @@ class Account(Base):
     status: Mapped[str] = mapped_column(String(30), default="ACTIVE", nullable=False)  # ACTIVE, SUSPENDED, FROZEN
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    micr: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    alternate_ifsc: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    opening_date: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Relationships
     customer: Mapped["Customer | None"] = relationship(back_populates="accounts")
@@ -132,7 +137,7 @@ class Transaction(Base):
     narration_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
     
     status: Mapped[str] = mapped_column(Text, default="STAGED", nullable=False)  # STAGED, CONFIRMED
-    fingerprint: Mapped[str] = mapped_column(Text, index=True, nullable=False)
+    fingerprint: Mapped[str] = mapped_column(Text, unique=True, index=True, nullable=False)
 
     def __repr__(self) -> str:
         return (
@@ -369,6 +374,10 @@ class Statement(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    # Flexible structured extraction output keyed by canonical field name.
+    # Schema: {"fields": {"account_number": {"value": "...", "source_line": 5, "confidence": "high"}, ...},
+    #          "extraction_warnings": [...], "extracted_at": "ISO8601"}
+    customer_profile_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Relationships
     audit_logs: Mapped[list["IngestionAuditLog"]] = relationship(back_populates="statement", cascade="all, delete-orphan")
@@ -397,3 +406,23 @@ class IngestionAuditLog(Base):
     def __repr__(self) -> str:
         return f"<IngestionAuditLog(statement_id={self.statement_id}, action={self.action}, timestamp={self.timestamp})>"
 
+
+class ProfileAccessLog(Base):
+    """
+    Immutable audit trail for every access attempt to a customer financial profile.
+    Required for PII compliance — records both allowed and denied access with role context.
+    """
+    __tablename__ = "profile_access_log"
+    __table_args__ = {'extend_existing': True}
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    ingestion_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    result: Mapped[str] = mapped_column(String(20), nullable=False)  # "allowed" or "denied"
+    role_at_time: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<ProfileAccessLog(user={self.user_id}, result={self.result}, timestamp={self.timestamp})>"

@@ -9,6 +9,7 @@ from app.dependencies.account import get_account_service
 from app.dependencies.auth import get_token_claims, RoleChecker
 from app.services.account_service import AccountService
 from shared.schemas import ResponseEnvelope
+from shared.database.models import ProfileAccessLog
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
@@ -69,6 +70,41 @@ async def get_account_profile(
     """
     Retrieves detailed bank account profile including customer info and linked accounts.
     """
+    account = await service.repository.get_account_by_id(id)
+    if not account:
+        from shared.exceptions import NotFoundException
+        raise NotFoundException("Bank account record not found.")
+
+    user_id = claims.get("sub")
+    user_role = (claims.get("role") or "analyst").lower()
+    is_privileged = user_role in ("administrator", "admin", "compliance_officer", "compliance_admin", "investigator")
+    access_result = "denied" if (not is_privileged and account.owner_id != user_id) else "allowed"
+
+    # Write audit log for EVERY access attempt (allowed AND denied)
+    try:
+        ip_addr = request.headers.get("x-forwarded-for") or (request.client.host if request.client else None)
+        access_log = ProfileAccessLog(
+            user_id=str(user_id) if user_id else None,
+            ingestion_id=None,
+            account_id=account.id,
+            result=access_result,
+            role_at_time=user_role,
+            ip_address=str(ip_addr) if ip_addr else None,
+        )
+        service.repository.session.add(access_log)
+        await service.repository.session.flush()
+    except Exception as audit_err:
+        import structlog
+        structlog.get_logger(__name__).error("Failed to write ProfileAccessLog for account profile", error=str(audit_err))
+
+    if access_result == "denied":
+        await service.repository.session.commit()
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied to access this account profile."
+        )
+
     profile_data = await service.get_account_profile(id)
     return ResponseEnvelope(
         success=True,
@@ -92,6 +128,16 @@ async def get_account(
     if not account:
         from shared.exceptions import NotFoundException
         raise NotFoundException("Bank account record not found.")
+
+    user_id = claims.get("sub")
+    user_role = (claims.get("role") or "analyst").lower()
+    is_privileged = user_role in ("administrator", "admin", "compliance_officer", "compliance_admin", "investigator")
+    if not is_privileged and account.owner_id != user_id:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied to access this account record."
+        )
         
     return ResponseEnvelope(
         success=True,

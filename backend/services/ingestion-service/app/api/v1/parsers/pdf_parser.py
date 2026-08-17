@@ -86,13 +86,13 @@ class PDFParser(BaseStatementParser):
 
                 owner_account = "UNKNOWN"
                 ac_patterns = [
-                    r"A[/]?C\s*(?:No|Number|Num)[^:\n]*[:\-]?\s*([A-Za-z0-9-]{6,35})",
-                    r"Account\s*(?:No|Number|Num)[^:\n]*[:\-]?\s*([A-Za-z0-9-]{6,35})",
-                    r"Savings\s+A[/]?C[^:\n]*[:\-]?\s*([A-Za-z0-9-]{6,35})",
-                    r"Current\s+A[/]?C[^:\n]*[:\-]?\s*([A-Za-z0-9-]{6,35})",
-                    r"Account\s+Number[^:\n]*[:\-]?\s*([A-Za-z0-9Xx*-]{6,35})",
-                    r"Account\s+ID[^:\n]*[:\-]?\s*([A-Za-z0-9-]{6,35})",
-                    r"Statement\s+for\s+Account[^:\n]*[:\-]?\s*([A-Za-z0-9-]{6,35})",
+                    r"A[/]?C\s*(?:No|Number|Num)[^:\n]*?[:\-]?\s*([A-Za-z0-9-]{6,35})",
+                    r"Account\s*(?:No|Number|Num)[^:\n]*?[:\-]?\s*([A-Za-z0-9-]{6,35})",
+                    r"Savings\s+A[/]?C[^:\n]*?[:\-]?\s*([A-Za-z0-9-]{6,35})",
+                    r"Current\s+A[/]?C[^:\n]*?[:\-]?\s*([A-Za-z0-9-]{6,35})",
+                    r"Account\s+Number[^:\n]*?[:\-]?\s*([A-Za-z0-9Xx*-]{6,35})",
+                    r"Account\s+ID[^:\n]*?[:\-]?\s*([A-Za-z0-9-]{6,35})",
+                    r"Statement\s+for\s+Account[^:\n]*?[:\-]?\s*([A-Za-z0-9-]{6,35})",
                 ]
                 for pat in ac_patterns:
                     m = re.search(pat, all_text, re.IGNORECASE)

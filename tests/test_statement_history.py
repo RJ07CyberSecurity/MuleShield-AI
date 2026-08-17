@@ -12,9 +12,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "b
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from shared.database import Base, Statement, Transaction, IngestionAuditLog
+
 from app.api.v1.ingestion import list_ingestions, delete_ingestion
 from sqlalchemy import select
+from shared.database.models import (
+    Base, Statement, IngestionAuditLog, Transaction, Customer, Account,
+    RiskScore, Alert, Case, ExternalIntel, DeviceSession, KYCRecord,
+    ModelFeedback, ProfileAccessLog
+)
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 

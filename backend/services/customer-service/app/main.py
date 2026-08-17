@@ -38,6 +38,10 @@ async def lifespan(app: FastAPI):
         async with db_manager._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables verified and created in Customer Service")
+        
+        # Seed customer data
+        await seed_customer_data()
+        
         if not settings.USE_SQLITE:
             logger.info("Connection pool successfully established")
     except Exception as exc:

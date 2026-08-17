@@ -105,7 +105,11 @@ class AccountService:
                 "pan_number": account.customer.pan_number,
                 "aadhaar_number_masked": account.customer.aadhaar_number_masked,
                 "occupation": account.customer.occupation,
-                "address": account.customer.address
+                "address": account.customer.address,
+                # KYC / compliance fields from statement extraction
+                "ckyc_number": getattr(account.customer, "ckyc_number", None),
+                "nominee": getattr(account.customer, "nominee", None),
+                "kyc_status": getattr(account.customer, "kyc_status", None),
             }
 
         transaction_summary = await self.repository.get_transaction_summary(account.account_number)
@@ -115,13 +119,17 @@ class AccountService:
         return {
             "account_id": account.id,
             "account_number": account.account_number,
-            "ifsc": getattr(account, "ifsc", "UNKNOWN"),
-            "bank_name": getattr(account, "bank_name", "Unknown Bank"),
-            "branch": getattr(account, "branch", "Main Branch"),
+            "ifsc": getattr(account, "ifsc", None),
+            "bank_name": getattr(account, "bank_name", None),
+            "branch": getattr(account, "branch", None),
             "balance": account.balance,
             "currency": getattr(account, "currency", "USD"),
             "status": account.status,
+            # New fields from statement extraction pipeline
+            "micr": getattr(account, "micr", None),
+            "alternate_ifsc": getattr(account, "alternate_ifsc", None),
+            "opening_date": getattr(account, "opening_date", None),
             "customer": customer_info,
             "transaction_summary": transaction_summary,
-            "linked_accounts": linked_accounts
+            "linked_accounts": linked_accounts,
         }

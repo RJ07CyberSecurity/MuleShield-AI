@@ -15,7 +15,8 @@ from shared.database.models import (
     Case,
     AuditLog,
     Statement,
-    IngestionAuditLog
+    IngestionAuditLog,
+    ProfileAccessLog,
 )
 
 __all__ = [
@@ -41,5 +42,6 @@ __all__ = [
     "Case",
     "AuditLog",
     "Statement",
-    "IngestionAuditLog"
+    "IngestionAuditLog",
+    "ProfileAccessLog",
 ]
